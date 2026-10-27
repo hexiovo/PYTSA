@@ -1,0 +1,135 @@
+PYTSA third-party software and license summary
+Python: 3.12.14 at C:\Users\DELL\.cache\codex-runtimes\codex-primary-runtime\dependencies\python
+The list reflects packages installed in the isolated project environment at build preparation.
+Package license identifiers are taken from installed metadata or the package's published license metadata.
+Selected full license and notice files from each installed distribution are included in assets/licenses/.
+PyInstaller is used as build tooling; its bootloader exception is noted with its license.
+
+Installed distributions:
+- altgraph 0.17.5: metadata: MIT; notices: licenses/altgraph-0.17.5-LICENSE
+- certifi 2026.10.23: MPL-2.0; notices: licenses/certifi-2026.10.23-LICENSE
+- charset-normalizer 3.5.2: metadata: MIT; notices: licenses/charset-normalizer-3.5.2-LICENSE
+- cloudpickle 3.1.2: metadata: BSD-3-Clause; notices: licenses/cloudpickle-3.1.2-LICENSE
+- contourpy 1.4.0: BSD-3-Clause; notices: licenses/contourpy-1.4.0-LICENSE
+- cycler 0.12.1: see included distribution notice; notices: licenses/cycler-0.12.1-LICENSE
+- et_xmlfile 2.0.0: metadata: MIT; notices: no text file was found in dist-info
+- fonttools 4.67.0: metadata: MIT; notices: licenses/fonttools-4.67.0-LICENSE, licenses/fonttools-4.67.0-LICENSE.external
+- formulaic 1.2.2: MIT; notices: licenses/formulaic-1.2.2-LICENSE
+- idna 3.20: BSD-3-Clause; notices: licenses/idna-3.20-LICENSE.md
+- interface_meta 2.0.1: metadata: MIT; notices: licenses/interface_meta-2.0.1-LICENSE
+- joblib 1.6.0: BSD-3-Clause; notices: licenses/joblib-1.6.0-LICENSE.txt
+- kiwisolver 1.5.1: see included distribution notice; notices: licenses/kiwisolver-1.5.1-LICENSE
+- matplotlib 3.11.2: Matplotlib License (PSF-based; see included notice); notices: licenses/matplotlib-3.11.2-LICENSE
+- narwhals 2.27.1: MIT; notices: licenses/narwhals-2.27.1-LICENSE.md
+- neurokit2 0.2.13: MIT; notices: licenses/neurokit2-0.2.13-AUTHORS.rst, licenses/neurokit2-0.2.13-LICENSE
+- numpy 2.5.4: BSD-3-Clause AND 0BSD AND MIT AND Zlib AND CC0-1.0; notices: licenses/numpy-2.5.4-COPYING, licenses/numpy-2.5.4-LICENSE, licenses/numpy-2.5.4-LICENSE.md, licenses/numpy-2.5.4-LICENSE.txt, licenses/numpy-2.5.4-dragon4_LICENSE.txt
+- openpyxl 3.1.5: MIT; notices: no text file was found in dist-info
+- packaging 26.3: Apache-2.0 OR BSD-2-Clause; notices: licenses/packaging-26.3-LICENSE, licenses/packaging-26.3-LICENSE.APACHE, licenses/packaging-26.3-LICENSE.BSD
+- pandas 2.3.3: BSD-3-Clause; notices: licenses/pandas-2.3.3-LICENSE
+- patsy 1.0.3: metadata: 2-clause BSD; notices: licenses/patsy-1.0.3-LICENSE.txt
+- pefile 2024.8.26: metadata: MIT; notices: licenses/pefile-2024.8.26-LICENSE
+- pillow 13.0.0: MIT-CMU; notices: licenses/pillow-13.0.0-LICENSE
+- pip 25.0.1: metadata: MIT; notices: licenses/pip-25.0.1-LICENSE.txt
+- pyinstaller 6.22.3: GPL-2.0-or-later with PyInstaller exception; notices: licenses/pyinstaller-6.22.3-COPYING.txt
+- pyinstaller-hooks-contrib 2026.9: GPL-2.0-or-later with PyInstaller exception; notices: licenses/pyinstaller-hooks-contrib-2026.9-LICENSE
+- pyparsing 3.3.3: MIT; notices: licenses/pyparsing-3.3.3-LICENSE
+- python-dateutil 3.0.0: BSD-3-Clause; notices: licenses/python-dateutil-3.0.0-LICENSE
+- pytz 2026.5: MIT; notices: licenses/pytz-2026.5-LICENSE.txt
+- PyWavelets 1.10.0: MIT AND BSD-3-Clause; notices: licenses/PyWavelets-1.10.0-LICENSE, licenses/PyWavelets-1.10.0-LICENSE_numpy.txt, licenses/PyWavelets-1.10.0-LICENSE_scipy.txt
+- pywin32-ctypes 0.2.3: metadata: BSD-3-Clause; notices: licenses/pywin32-ctypes-0.2.3-LICENSE.txt
+- requests 2.34.2: Apache-2.0; notices: licenses/requests-2.34.2-LICENSE, licenses/requests-2.34.2-NOTICE
+- scikit-learn 1.9.1: BSD-3-Clause; notices: licenses/scikit-learn-1.9.1-COPYING, licenses/scikit-learn-1.9.1-COPYRIGHT, licenses/scikit-learn-1.9.1-LICENSE
+- scipy 1.18.1: BSD-3-Clause; notices: licenses/scipy-1.18.1-LICENSE, licenses/scipy-1.18.1-LICENSE.md, licenses/scipy-1.18.1-LICENSE.txt
+- setuptools 81.0.0: MIT; notices: licenses/setuptools-81.0.0-LICENSE, licenses/setuptools-81.0.0-LICENSE.APACHE, licenses/setuptools-81.0.0-LICENSE.BSD, licenses/setuptools-81.0.0-LICENSE.txt, licenses/setuptools-81.0.0-NOTICE
+- six 1.17.0: MIT; notices: licenses/six-1.17.0-LICENSE
+- statsmodels 0.15.0: BSD-3-Clause; notices: licenses/statsmodels-0.15.0-LICENSE, licenses/statsmodels-0.15.0-LICENSE.txt
+- threadpoolctl 3.7.0: BSD-3-Clause; notices: licenses/threadpoolctl-3.7.0-LICENSE
+- typing_extensions 4.16.0: PSF-2.0; notices: licenses/typing_extensions-4.16.0-LICENSE
+- tzdata 2026.5: Apache-2.0; notices: licenses/tzdata-2026.5-LICENSE, licenses/tzdata-2026.5-LICENSE_APACHE
+- urllib3 2.8.0: MIT; notices: licenses/urllib3-2.8.0-LICENSE.txt
+- wrapt 2.5.1: BSD-2-Clause; notices: licenses/wrapt-2.5.1-LICENSE
+- Runtime tk8.6: license terms included at licenses/runtime-tk8.6-license.terms
+- Runtime demos: license terms included at licenses/runtime-demos-license.terms
+- Runtime python: license terms included at licenses/runtime-python-LICENSE.txt
+- Runtime numpy-2.3.5.dist-info: license terms included at licenses/runtime-numpy-2.3.5.dist-info-LICENSE.txt
+- Runtime xlsxwriter-3.2.9.dist-info: license terms included at licenses/runtime-xlsxwriter-3.2.9.dist-info-LICENSE.txt
+- Runtime licenses: license terms included at licenses/runtime-licenses-LICENSE.txt
+- Runtime random: license terms included at licenses/runtime-random-LICENSE.txt
+- Runtime licenses: license terms included at licenses/runtime-licenses-LICENSE.txt
+- Runtime cachecontrol: license terms included at licenses/runtime-cachecontrol-LICENSE.txt
+- Runtime distlib: license terms included at licenses/runtime-distlib-LICENSE.txt
+- Runtime urllib3: license terms included at licenses/runtime-urllib3-LICENSE.txt
+- Runtime licenses: license terms included at licenses/runtime-licenses-LICENSE.txt
+- Runtime cachecontrol: license terms included at licenses/runtime-cachecontrol-LICENSE.txt
+- Runtime distlib: license terms included at licenses/runtime-distlib-LICENSE.txt
+- Runtime urllib3: license terms included at licenses/runtime-urllib3-LICENSE.txt
+- Runtime licenses: license terms included at licenses/runtime-licenses-LICENSE.txt
+- Runtime licenses: license terms included at licenses/runtime-licenses-LICENSE.txt
+- Runtime pandas-3.0.1.dist-info: license terms included at licenses/runtime-pandas-3.0.1.dist-info-LICENSE
+- Runtime pdf2image-1.17.0.dist-info: license terms included at licenses/runtime-pdf2image-1.17.0.dist-info-LICENSE
+- Runtime pyhumps-3.8.0.dist-info: license terms included at licenses/runtime-pyhumps-3.8.0.dist-info-LICENSE
+- Runtime python_dateutil-2.9.0.post0.dist-info: license terms included at licenses/runtime-python_dateutil-2.9.0.post0.dist-info-LICENSE
+- Runtime python_pptx-1.0.2.dist-info: license terms included at licenses/runtime-python_pptx-1.0.2.dist-info-LICENSE
+- Runtime six-1.17.0.dist-info: license terms included at licenses/runtime-six-1.17.0.dist-info-LICENSE
+- Runtime licenses: license terms included at licenses/runtime-licenses-LICENSE
+- Runtime agent-base: license terms included at licenses/runtime-agent-base-LICENSE
+- Runtime debug: license terms included at licenses/runtime-debug-LICENSE
+- Runtime detect-libc: license terms included at licenses/runtime-detect-libc-LICENSE
+- Runtime follow-redirects: license terms included at licenses/runtime-follow-redirects-LICENSE
+- Runtime https-proxy-agent: license terms included at licenses/runtime-https-proxy-agent-LICENSE
+- Runtime parenthesis: license terms included at licenses/runtime-parenthesis-LICENSE
+- Runtime skia-canvas: license terms included at licenses/runtime-skia-canvas-LICENSE
+- Runtime licenses: license terms included at licenses/runtime-licenses-LICENSE
+- Runtime licenses: license terms included at licenses/runtime-licenses-LICENSE
+- Runtime licenses: license terms included at licenses/runtime-licenses-LICENSE
+- Runtime ma: license terms included at licenses/runtime-ma-LICENSE
+- Runtime licenses: license terms included at licenses/runtime-licenses-LICENSE
+- Runtime licenses: license terms included at licenses/runtime-licenses-LICENSE
+- Runtime licenses: license terms included at licenses/runtime-licenses-LICENSE
+- Runtime certifi: license terms included at licenses/runtime-certifi-LICENSE
+- Runtime distro: license terms included at licenses/runtime-distro-LICENSE
+- Runtime packaging: license terms included at licenses/runtime-packaging-LICENSE
+- Runtime pkg_resources: license terms included at licenses/runtime-pkg_resources-LICENSE
+- Runtime platformdirs: license terms included at licenses/runtime-platformdirs-LICENSE
+- Runtime pygments: license terms included at licenses/runtime-pygments-LICENSE
+- Runtime pyproject_hooks: license terms included at licenses/runtime-pyproject_hooks-LICENSE
+- Runtime requests: license terms included at licenses/runtime-requests-LICENSE
+- Runtime resolvelib: license terms included at licenses/runtime-resolvelib-LICENSE
+- Runtime rich: license terms included at licenses/runtime-rich-LICENSE
+- Runtime tomli: license terms included at licenses/runtime-tomli-LICENSE
+- Runtime tomli_w: license terms included at licenses/runtime-tomli_w-LICENSE
+- Runtime truststore: license terms included at licenses/runtime-truststore-LICENSE
+- Runtime certifi: license terms included at licenses/runtime-certifi-LICENSE
+- Runtime distro: license terms included at licenses/runtime-distro-LICENSE
+- Runtime packaging: license terms included at licenses/runtime-packaging-LICENSE
+- Runtime pkg_resources: license terms included at licenses/runtime-pkg_resources-LICENSE
+- Runtime platformdirs: license terms included at licenses/runtime-platformdirs-LICENSE
+- Runtime pygments: license terms included at licenses/runtime-pygments-LICENSE
+- Runtime pyproject_hooks: license terms included at licenses/runtime-pyproject_hooks-LICENSE
+- Runtime requests: license terms included at licenses/runtime-requests-LICENSE
+- Runtime resolvelib: license terms included at licenses/runtime-resolvelib-LICENSE
+- Runtime rich: license terms included at licenses/runtime-rich-LICENSE
+- Runtime tomli: license terms included at licenses/runtime-tomli-LICENSE
+- Runtime tomli_w: license terms included at licenses/runtime-tomli_w-LICENSE
+- Runtime truststore: license terms included at licenses/runtime-truststore-LICENSE
+- Runtime licenses: license terms included at licenses/runtime-licenses-LICENSE
+- Runtime licenses: license terms included at licenses/runtime-licenses-LICENSE
+- Runtime licenses: license terms included at licenses/runtime-licenses-LICENSE
+- Runtime licenses: license terms included at licenses/runtime-licenses-LICENSE
+- Runtime licenses: license terms included at licenses/runtime-licenses-LICENSE
+- Runtime licenses: license terms included at licenses/runtime-licenses-LICENSE
+- Runtime autocommand-2.2.2.dist-info: license terms included at licenses/runtime-autocommand-2.2.2.dist-info-LICENSE
+- Runtime backports.tarfile-1.2.0.dist-info: license terms included at licenses/runtime-backports.tarfile-1.2.0.dist-info-LICENSE
+- Runtime jaraco.text-4.0.0.dist-info: license terms included at licenses/runtime-jaraco.text-4.0.0.dist-info-LICENSE
+- Runtime licenses: license terms included at licenses/runtime-licenses-LICENSE
+- Runtime licenses: license terms included at licenses/runtime-licenses-LICENSE
+- Runtime licenses: license terms included at licenses/runtime-licenses-LICENSE
+- Runtime licenses: license terms included at licenses/runtime-licenses-LICENSE
+- Runtime licenses: license terms included at licenses/runtime-licenses-LICENSE
+- Runtime licenses: license terms included at licenses/runtime-licenses-LICENSE
+- Runtime licenses: license terms included at licenses/runtime-licenses-LICENSE
+- Runtime licenses: license terms included at licenses/runtime-licenses-LICENSE
+- Runtime licenses: license terms included at licenses/runtime-licenses-LICENSE
+- Runtime licenses: license terms included at licenses/runtime-licenses-LICENSE
+- Runtime licenses: license terms included at licenses/runtime-licenses-LICENSE
+- Runtime licenses: license terms included at licenses/runtime-licenses-LICENSE

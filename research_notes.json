@@ -1,0 +1,213 @@
+{
+  "title": "PYTSA 方法与文献依据",
+  "accessed": "2026-10-26",
+  "review_type": "开发方法调研，非系统综述",
+  "scope": "离线实验数据与多变量时间序列；EDA为首个生理专用模块，无传感器连接。",
+  "searches": [
+    "2025 2026 time series forecasting benchmark evaluation foundation models classical statistical models GIFT-Eval paper",
+    "2025 time series analysis tool comprehensive features catch22 sktime aeon connectivity spectral coherence"
+  ],
+  "decision": "采用成熟本地统计包。先显示数据结构、趋势、季节性与平稳性，再比较基线和统计预测模型。预测保留原始尺度的独立数据分支，按时间切分；全样本探索性插值、标准化与STL不进入留后预测。单次留后结果用于本数据的探索性比较，不等于独立外部验证。 EDA保留原始物理值，采用NeuroKit2高通/中位数分解及峰检测，提供窗口/事件描述。高通分解是透明快速的操作性定义；不宣称其等同于cvxEDA或真实生理分量。其他生理信号先使用通用模块。",
+  "limitations": [
+    "没有用户真实数据，不能声明其研究或业务效果已经验证。",
+    "论文中的基础模型结果不代表本工具实现了这些模型。",
+    "ADF拒绝单位根不证明所有平稳条件成立；KPSS未拒绝也不是平稳性证明。",
+    "相关、偏相关、滞后相关和相干均不是因果证据。",
+    "模型预测区间依赖模型和残差假设，不保证真实覆盖率。",
+    "单次留后集若用于选择模型，其最优分数存在选择乐观性；应在新数据上再次评估。",
+    "EDA操作性分解不等于真值，通用模块不包含完整ECG/EEG/EMG领域管线。",
+    "不同被试与会话应分别导入；事件重叠/越界/缺段保留标记并排除有效条件汇总。",
+    "SCR检出不能自动证明特定情绪或压力，a.u.不能用于uS阈值比较。"
+  ],
+  "references": [
+    {
+      "id": "TIME2026",
+      "title": "It's TIME: Towards the Next Generation of Time Series Forecasting Benchmarks",
+      "authors": [
+        "Zhongzheng Qiao",
+        "Sheng Pan",
+        "Anni Wang",
+        "Viktoriya Zhukova",
+        "Yong Liu",
+        "Xudong Jiang",
+        "Qingsong Wen",
+        "Mingsheng Long",
+        "Ming Jin",
+        "Chenghao Liu"
+      ],
+      "year": 2026,
+      "url": "https://arxiv.org/html/2602.12147v1",
+      "identifier": "arXiv:2602.12147v1",
+      "read_scope": "全文HTML，重点5、6.3、附录C.3与D.2",
+      "status": "预印本；题名、作者、年份与相关方法段落已核对",
+      "supports": "预测能力随序列模式而变化；用STL趋势与季节强度、谱熵、单位根检验描述数据，结合基线和尺度无关误差进行解释。",
+      "implementation": "展示STL分量与强度、谱熵、ADF/KPSS及MASE。连续描述指标用于解释，不照搬论文二值分组或声称复现该基准。",
+      "assumptions": "STL需要指定季节周期和足够等间隔样本；方差分母为零时强度不可定义。"
+    },
+    {
+      "id": "FEV2025",
+      "title": "fev-bench: A Realistic Benchmark for Time Series Forecasting",
+      "authors": [
+        "Oleksandr Shchur",
+        "Abdul Fatir Ansari",
+        "Caner Turkmen",
+        "Lorenzo Stella",
+        "Nick Erickson",
+        "Pablo Guerron",
+        "Michael Bohlke-Schneider",
+        "Yuyang Wang"
+      ],
+      "year": 2025,
+      "url": "https://arxiv.org/html/2509.26468v1",
+      "identifier": "arXiv:2509.26468v1",
+      "read_scope": "全文HTML，重点2、3.1、3.2、7.1与7.2",
+      "status": "预印本；题名、作者、年份与评价公式已核对",
+      "supports": "任务需明确预测长度与时间截点；用历史季节误差计算MASE分母，保留Naive、SeasonalNaive等基线，注意数据泄漏和运行成本。",
+      "implementation": "为控制本地运行成本，工具提供单次时间留后比较，而非完整滚动基准；报告MAE、RMSE、sMAPE、MASE。MASE分母只来自训练段，零分母显示未定义。",
+      "assumptions": "季节周期由用户根据数据含义指定；模型排名仅代表所选数据与留后段。"
+    },
+    {
+      "id": "T02026",
+      "title": "t_0: A Time-Series Foundation Model for Forecasting with Context",
+      "authors": [
+        "Lucas Meyer",
+        "Claudio Sole",
+        "Huikan Xiang",
+        "Nicolas Li",
+        "Lucas Franceschino",
+        "Arnau Quera-Bofarull",
+        "Maarten P. Scholl",
+        "Joachim Fainberg",
+        "Geoffrey Négiar"
+      ],
+      "year": 2026,
+      "url": "https://arxiv.org/abs/2609.24559",
+      "identifier": "arXiv:2609.24559",
+      "read_scope": "仅摘要和元数据；HTML全文地址404",
+      "status": "2026-09-21预印本，未核对全文实现细节",
+      "supports": "近期研究继续探索多变量上下文及概率预测，基础模型是可比较的另一条路线。",
+      "implementation": "记录近期进展；本版不集成模型权重、远程推理或基础模型，不以摘要排行榜推断本地效果。",
+      "assumptions": "摘要结果是作者报告，未在本项目复现。"
+    },
+    {
+      "id": "SM_STATIONARITY",
+      "title": "statsmodels: Stationarity and detrending (ADF/KPSS)",
+      "authors": [
+        "statsmodels developers"
+      ],
+      "year": 2026,
+      "url": "https://www.statsmodels.org/stable/examples/notebooks/generated/stationarity_detrending_adf_kpss.html",
+      "read_scope": "官方方法示例",
+      "status": "在线文档显示0.15.0；运行版本另存环境记录",
+      "supports": "ADF与KPSS的原假设相反，需要结合趋势、差分和数据结构解释。",
+      "implementation": "显示检验统计量和p值，常数或样本不足时明确跳过；保留KPSS表格截断警告。",
+      "assumptions": "检验依赖滞后、回归项、样本量及模型条件。"
+    },
+    {
+      "id": "SM_STL",
+      "title": "statsmodels.tsa.seasonal.STL",
+      "authors": [
+        "statsmodels developers"
+      ],
+      "year": 2026,
+      "url": "https://www.statsmodels.org/stable/generated/statsmodels.tsa.seasonal.STL.html",
+      "read_scope": "官方API文档",
+      "status": "在线文档显示0.15.0；运行版本另存环境记录",
+      "supports": "使用LOESS分离季节、趋势和残差；周期需合理给定。",
+      "implementation": "采用成熟STL实现，用户设period；不将全样本分解结果输入留后预测。",
+      "assumptions": "至少两个完整周期；不代表自动发现真实季节周期。"
+    },
+    {
+      "id": "SCIPY_COHERENCE",
+      "title": "SciPy signal.coherence",
+      "authors": [
+        "SciPy community"
+      ],
+      "year": 2026,
+      "url": "https://docs.scipy.org/doc/scipy/reference/generated/scipy.signal.coherence.html",
+      "read_scope": "官方API文档、公式、参数与Welch原始引用",
+      "status": "在线文档显示1.18.0；运行版本另存环境记录",
+      "supports": "Welch法平方相干为交叉谱模平方除以两个自谱乘积。",
+      "implementation": "显示指定频带内平均平方相干矩阵，明确采样率、频带、分段长度；使用多个重叠分段，常数或空频带不可定义。",
+      "assumptions": "同采样率、时间对齐、等间隔；有限样本有偏，频带平均是描述性指标且不是显著性或因果推断。"
+    },
+    {
+      "id": "SM_FORECAST",
+      "title": "statsmodels: Forecasting in statsmodels",
+      "authors": [
+        "statsmodels developers"
+      ],
+      "year": 2026,
+      "url": "https://www.statsmodels.org/stable/examples/notebooks/generated/statespace_forecasting.html",
+      "read_scope": "官方状态空间预测示例",
+      "status": "在线文档显示0.15.0；运行版本另存环境记录",
+      "supports": "状态空间模型可返回多步预测和模型区间，并需按时间评估预测误差。",
+      "implementation": "ARIMA/SARIMA训练段拟合、留后预测与误差；全部历史重拟合后给未来预测，保留拟合不收敛或残差相关提示。",
+      "assumptions": "区间依赖模型设定；非收敛结果不可当作可靠结论。"
+    },
+    {
+      "id": "EDA2026",
+      "title": "Electrodermal Activity (EDA) for Stress Detection: A Comprehensive Survey and Benchmark",
+      "authors": [
+        "Gang Liu",
+        "Zixiong Ning"
+      ],
+      "year": 2026,
+      "url": "https://arxiv.org/html/2609.22622v1",
+      "identifier": "arXiv:2609.22622v1",
+      "read_scope": "全文HTML，重点III-B、IV-A、IV-B和讨论",
+      "status": "2026-09-18预印本，非同行评议结论",
+      "supports": "分解、过滤、归一化和评价协议会影响下游结果；其多数据集分类比较支持cvxEDA。",
+      "implementation": "该结果不能直接证明事件SCR幅值真值。工具选可解释的NeuroKit高通/中位数分解，并保留方法、单位和阈值；不输出压力分类。",
+      "assumptions": "作者的分类任务与本工具的离线描述分析不同，不能据此声称本工具已验证分类效果。"
+    },
+    {
+      "id": "EDA2025",
+      "title": "Transformer-Based Decomposition of Electrodermal Activity for Real-World Mental Health Applications",
+      "authors": [
+        "Charalampos Tsirmpas",
+        "Stasinos Konstantopoulos",
+        "Dimitris Andrikopoulos",
+        "Konstantina Kyriakouli",
+        "Panagiotis Fatouros"
+      ],
+      "year": 2025,
+      "url": "https://arxiv.org/html/2506.06378v1",
+      "identifier": "arXiv:2506.06378v1",
+      "related_publication": "Sensors 25(14),4406; doi:10.3390/s25144406",
+      "read_scope": "预印本全文HTML；出版方429/PMC访问检查，未假称读取正式全文",
+      "status": "已读预印本，正式版本元数据由搜索结果核对",
+      "supports": "真实EDA分解缺乏普适真值，不同方法对峰幅值与慢变成分可有不同结果。",
+      "implementation": "将分解与峰指标明确作为估计，显示完整曲线、幅值和方法；不训练Transformer。",
+      "assumptions": "文章方法比较不能作为所有分解方法等价或普遍有效的证明。"
+    },
+    {
+      "id": "NK_EDA",
+      "title": "NeuroKit2 Electrodermal Activity API and source documentation",
+      "authors": [
+        "NeuroKit developers"
+      ],
+      "year": 2026,
+      "url": "https://neuropsychology.github.io/NeuroKit/functions/eda.html",
+      "read_scope": "官方eda_clean/eda_phasic/eda_peaks源代码文档与本地0.2.13实现",
+      "status": "本地使用neurokit2 0.2.13；在线文档0.2.13.dev214",
+      "supports": "NeuroKit支持高通和中位数分解。清理默认4阶3Hz低通，低采样率时跳过；相对峰阈值按最大显著度而非绝对uS解释。",
+      "implementation": "EDA清理/分解和公开eda_findpeaks检测复用成熟包；绝对阈值另外按起始到峰幅值筛选。缺段独立处理；恢复为下一个候选峰前首个半幅交点。",
+      "assumptions": "高通截止默认0.05Hz，中位数窗口4秒。20秒连续段与2Hz是本工具保守运行边界，不是公认充分生理质量标准。"
+    },
+    {
+      "id": "NK2021",
+      "title": "NeuroKit2: A Python toolbox for neurophysiological signal processing",
+      "authors": [
+        "NeuroKit authors"
+      ],
+      "year": 2021,
+      "url": "https://doi.org/10.3758/s13428-020-01516-y",
+      "read_scope": "软件官方引用，出版全文未获取",
+      "status": "工具引用标识；未依据其不可访问全文新增方法结论",
+      "supports": "仅用于工具出处标注",
+      "implementation": "具体API行为以已读官方源码及本地版本为准。",
+      "assumptions": "工具论文不代替当前数据质量或生理有效性验证。"
+    }
+  ]
+}
