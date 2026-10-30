@@ -1,0 +1,34 @@
+{
+  "schema": "pytsa-study-config/1",
+  "study_id": "TBD",
+  "status": "PENDING",
+  "software": {"name": "PYTSA", "version": null},
+  "design": {"status": "MISSING", "question": null, "independent_unit": null, "conditions": [], "outcomes": []},
+  "decision_ledger": [],
+  "input_data": {"status": "MISSING", "files": [], "id_columns": [], "time_axis": {}, "event_schema": {}},
+  "native_template": {
+    "schema": "pyt-workflow-template",
+    "schema_version": 1,
+    "kind": "combined",
+    "parameters": {"prepare": {}, "analysis": {}, "forecast": {}, "eda": {}, "event_mapping": {}}
+  },
+  "conversion": {"status": "NOT_RUN", "reason": "尚无具体研究设计或数据", "steps": [], "scripts": []},
+  "statistics": {
+    "status": "PENDING", "outcome": null, "independent_unit": null, "model": null,
+    "contrasts": [], "effect_size": null, "confidence_interval": null, "multiplicity": null,
+    "missing_policy": null, "assumptions": [], "diagnostics": [], "failure_plan": []
+  },
+  "operator_card": {"status": "PENDING", "steps": []},
+  "data_dictionary": [],
+  "preparation_checklist": [],
+  "evidence_manifest": {"items": []},
+  "validation": {
+    "template_shell": {"status": "NOT_RUN", "evidence": [], "reason": "待真实数据与目标模板"},
+    "native_fields": {"status": "NOT_RUN", "evidence": [], "reason": "静态壳检查不验证完整参数schema"},
+    "native_execution": {"status": "NOT_RUN", "evidence": [], "reason": "尚未运行PYTSA"},
+    "conversion_execution": {"status": "NOT_RUN", "evidence": [], "reason": "无转换任务"},
+    "statistical_design": {"status": "NOT_RUN", "evidence": [], "reason": "无研究设计"},
+    "statistical_execution": {"status": "NOT_RUN", "evidence": [], "reason": "无真实统计输入"},
+    "end_to_end": {"status": "NOT_RUN", "evidence": [], "reason": "无真实研究配置"}
+  }
+}

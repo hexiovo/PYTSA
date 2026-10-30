@@ -1387,8 +1387,31 @@ class WorkflowMixin:
             result["accepted"] = True
             result["parameters"] = mapped
             window.destroy()
-        tk.Button(buttons, text="应用映射", command=accept, bg=COLORS["green"], fg=COLORS["ink"]).pack(side="left", padx=4)
-        tk.Button(buttons, text="取消", command=window.destroy, bg=COLORS["white"], fg=COLORS["ink"]).pack(side="left", padx=4)
+        tk.Button(
+            buttons,
+            text="应用映射",
+            command=accept,
+            bg=COLORS["green"],
+            fg=COLORS["white"],
+            activebackground=COLORS["primary_hover"],
+            activeforeground=COLORS["white"],
+            relief="flat",
+            bd=0,
+            padx=12,
+            pady=7,
+        ).pack(side="left", padx=4)
+        tk.Button(
+            buttons,
+            text="取消",
+            command=window.destroy,
+            bg=COLORS["white"],
+            fg=COLORS["ink"],
+            activebackground=COLORS["control_hover"],
+            relief="flat",
+            bd=0,
+            padx=12,
+            pady=7,
+        ).pack(side="left", padx=4)
         self.root.wait_window(window)
         return result["parameters"] if result["accepted"] else None
 

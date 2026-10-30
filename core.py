@@ -15,6 +15,7 @@ import platform
 import re
 import time
 import warnings as pywarnings
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Mapping
@@ -30,7 +31,10 @@ from statsmodels.tsa.stattools import adfuller, acf, kpss, pacf
 from statsmodels.stats.diagnostic import acorr_ljungbox
 from analysis_options import (numeric_seconds, datetime_utc, validate_gap_limits, filter_values,
                               welch_options, basic_metrics, spectral_metrics, frequency_bands,
-                              integrate_band, window_metrics, rolling_validation)
+                              integrate_band, window_metrics, rolling_validation,
+                              apply_signal_preprocessing, time_domain_metrics, permutation_entropy)
+from compute_backend import (resolve_compute_backend, association_matrices,
+                             public_backend_metadata)
 
 
 def load_table(path, sheet_name=0, encoding="utf-8-sig", sep=None) -> pd.DataFrame:
@@ -294,9 +298,16 @@ def prepare_data(df, config) -> dict[str, Any]:
         if missing_cells:
             warnings_out.append(f"Linearly interpolated {missing_cells} internal missing signal cells in the exploratory data branch only.")
 
+    exploratory, preprocessing_meta = apply_signal_preprocessing(
+        data[value_cols].to_numpy(dtype=float), fs, cfg)
+    data.loc[:, value_cols] = exploratory
+    warnings_out.extend(preprocessing_meta.get("details", {}).get("warnings", []))
+    processing_order = list(preprocessing_meta["steps"])
+
     data.loc[:, value_cols] = filter_values(data[value_cols].to_numpy(dtype=float), fs, cfg)
     if cfg.get("filter_type", "none") != "none":
         warnings_out.append(f"Butterworth {cfg['filter_type']} filtering applied only to exploratory values; phase={cfg.get('filter_phase', 'zero')}.")
+        processing_order.append(f"butterworth:{cfg['filter_type']}")
     transform = cfg.get("transform", "none")
     if transform not in {"none", "demean", "detrend", "zscore", "difference"}:
         raise ValueError("transform must be 'none', 'demean', 'detrend', 'zscore', or 'difference'.")
@@ -315,6 +326,8 @@ def prepare_data(df, config) -> dict[str, Any]:
         data.loc[:, value_cols] = data[value_cols].diff()
         data = data.iloc[1:].reset_index(drop=True)
         warnings_out.append("Applied first differences; timestamps mark the later observation in each adjacent pair.")
+    if transform != "none":
+        processing_order.append(f"transform:{transform}")
 
     if len(data) < 16:
         raise ValueError("At least 16 usable samples are required after preparation and transformation.")
@@ -340,6 +353,7 @@ def prepare_data(df, config) -> dict[str, Any]:
         "missing_cells_original": missing_cells,
         "resample_seconds": interval,
         "transform": transform,
+        "preprocessing": {**preprocessing_meta, "processing_order": processing_order},
         "parameters": cfg,
         "warnings": list(warnings_out),
     }
@@ -394,6 +408,7 @@ def analyze(prepared, config) -> dict[str, Any]:
         raise ValueError("Prepared data does not match its selected signal columns.")
     if len(data) < 16:
         raise ValueError("At least 16 prepared samples are required.")
+    compute_info = resolve_compute_backend(cfg)
     max_lag = int(cfg.get("max_lag", 30))
     period = int(cfg.get("period", 12))
     lag = int(cfg.get("lag", 1))
@@ -485,6 +500,8 @@ def analyze(prepared, config) -> dict[str, Any]:
             "trend_strength": trend_strength, "seasonal_strength": seasonal_strength,
             "stl_note": stl_note,
             **basic_metrics(values), **power_summary,
+            **time_domain_metrics(values, fs),
+            "permutation_entropy": permutation_entropy(values, order=3, delay=1),
         })
 
         # Unit-root and stationarity tests have different null hypotheses; neither is proof.
@@ -539,13 +556,17 @@ def analyze(prepared, config) -> dict[str, Any]:
             warnings_out.append(f"ACF/PACF skipped for {name}: {exc}")
 
     # Pairwise descriptive matrices.
-    signal_frame = pd.DataFrame(matrix_data, columns=names)
-    pearson = signal_frame.corr(method="pearson")
-    spearman = signal_frame.corr(method="spearman")
-    covariance = signal_frame.cov()
+    pearson_values, covariance_values, euclidean = association_matrices(matrix_data, compute_info)
+    pearson = _matrix_frame(pearson_values, names)
+    spearman = pd.DataFrame(matrix_data, columns=names).corr(method="spearman")
+    kendall = pd.DataFrame(matrix_data, columns=names).corr(method="kendall")
+    covariance = _matrix_frame(covariance_values, names)
     matrices: dict[str, pd.DataFrame] = {
-        "pearson": pearson, "spearman": spearman, "covariance": covariance,
+        "pearson": pearson, "spearman": spearman, "kendall": kendall,
+        "covariance": covariance,
     }
+    if compute_info.get("fallback_reason"):
+        warnings_out.append(f"Compute backend fallback: {compute_info['fallback_reason']}")
     warnings_out.append("Correlation, lagged correlation, partial correlation, and coherence are descriptive associations, not causal evidence.")
 
     partial = np.full((len(names), len(names)), np.nan, dtype=float)
@@ -581,31 +602,31 @@ def analyze(prepared, config) -> dict[str, Any]:
     matrices["lagged"] = _matrix_frame(lagged, names)
 
     coherence = np.full((len(names), len(names)), np.nan, dtype=float)
-    for i in range(len(names)):
-        for j in range(i, len(names)):
-            if constant_flags[i] or constant_flags[j]:
-                continue
-            freq, coh = signal.coherence(matrix_data[:, i], matrix_data[:, j], fs=fs,
-                                         **spectral_options)
-            selected = (freq >= band_low) & (freq <= band_high)
-            if selected.any():
-                value = float(np.mean(coh[selected]))
+    coherence_pairs = [(i, j) for i in range(len(names)) for j in range(i, len(names))]
+
+    def _coherence_pair(pair):
+        i, j = pair
+        if constant_flags[i] or constant_flags[j]:
+            return i, j, np.nan
+        freq, coh = signal.coherence(matrix_data[:, i], matrix_data[:, j], fs=fs,
+                                     **spectral_options)
+        selected = (freq >= band_low) & (freq <= band_high)
+        return i, j, float(np.mean(coh[selected])) if selected.any() else np.nan
+
+    workers = int(compute_info["workers"])
+    if workers > 1 and len(coherence_pairs) > 1:
+        with ThreadPoolExecutor(max_workers=workers) as executor:
+            coherence_results = executor.map(_coherence_pair, coherence_pairs)
+            for i, j, value in coherence_results:
                 coherence[i, j] = coherence[j, i] = value
+    else:
+        for pair in coherence_pairs:
+            i, j, value = _coherence_pair(pair)
+            coherence[i, j] = coherence[j, i] = value
     if not np.isfinite(coherence).any():
         warnings_out.append("Coherence is undefined for the selected band or constant signals.")
     matrices["coherence"] = _matrix_frame(coherence, names)
 
-    standardized = np.full_like(matrix_data, np.nan, dtype=float)
-    std = np.std(matrix_data, axis=0, ddof=1)
-    means = np.mean(matrix_data, axis=0)
-    nonconstant = np.isfinite(std) & (std > 0)
-    standardized[:, nonconstant] = (matrix_data[:, nonconstant] - means[nonconstant]) / std[nonconstant]
-    euclidean = np.full((len(names), len(names)), np.nan, dtype=float)
-    for i in range(len(names)):
-        for j in range(i, len(names)):
-            if nonconstant[i] and nonconstant[j]:
-                value = float(np.sqrt(np.mean(np.square(standardized[:, i] - standardized[:, j]))))
-                euclidean[i, j] = euclidean[j, i] = value
     matrices["standardized_euclidean"] = _matrix_frame(euclidean, names)
 
     tables = {
@@ -632,6 +653,16 @@ def analyze(prepared, config) -> dict[str, Any]:
         "lagged_direction": "matrix row is source at t; column is target at t+lag.",
         "standardized_euclidean": "sqrt(mean squared difference after per-channel sample z-score; ddof=1).",
         "partial_method": "inverse sample covariance; undefined when rank-deficient or condition number >= 1e12.",
+        "kendall_method": "Kendall rank correlation (tau-b via pandas/scipy); descriptive only, no p-values are computed.",
+        "compute_backend": public_backend_metadata(compute_info),
+        "time_domain_metrics": {
+            "hjorth_activity": "sample variance (ddof=1); NaN for fewer than 2 samples.",
+            "hjorth_mobility": "sqrt(var(first difference in units/second) / var(signal)); NaN for constant or fewer than 3 samples.",
+            "hjorth_complexity": "mobility of first derivative divided by signal mobility; NaN when undefined, including constant or linear signals.",
+            "permutation_entropy": "normalized Bandt-Pompe entropy for order=3, delay=1; stable sorting resolves ties by preserving temporal order; NaN when fewer than 3 samples.",
+            "line_length": "sum of absolute adjacent sample differences; NaN for fewer than 2 samples.",
+            "zero_crossing_rate": "mean-centered nonzero sign changes per second; exact zero samples are skipped; NaN for fewer than 2 samples.",
+        },
         "stl_period": period,
         "interpretation": "ADF/KPSS are evidence under their stated nulls, not proofs; association matrices are not causal evidence.",
     }

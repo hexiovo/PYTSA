@@ -1,11 +1,13 @@
 {
   "title": "PYTSA 方法与文献依据",
-  "accessed": "2026-10-26",
+  "accessed": "2026-10-30",
   "review_type": "开发方法调研，非系统综述",
   "scope": "离线实验数据与多变量时间序列；EDA为首个生理专用模块，无传感器连接。",
   "searches": [
     "2025 2026 time series forecasting benchmark evaluation foundation models classical statistical models GIFT-Eval paper",
-    "2025 time series analysis tool comprehensive features catch22 sktime aeon connectivity spectral coherence"
+    "2025 time series analysis tool comprehensive features catch22 sktime aeon connectivity spectral coherence",
+    "2025 2026 electrodermal activity preprocessing decomposition artifacts benchmark",
+    "2026 ospEDA gmsEDA decomposition"
   ],
   "decision": "采用成熟本地统计包。先显示数据结构、趋势、季节性与平稳性，再比较基线和统计预测模型。预测保留原始尺度的独立数据分支，按时间切分；全样本探索性插值、标准化与STL不进入留后预测。单次留后结果用于本数据的探索性比较，不等于独立外部验证。 EDA保留原始物理值，采用NeuroKit2高通/中位数分解及峰检测，提供窗口/事件描述。高通分解是透明快速的操作性定义；不宣称其等同于cvxEDA或真实生理分量。其他生理信号先使用通用模块。",
   "limitations": [
@@ -17,7 +19,9 @@
     "单次留后集若用于选择模型，其最优分数存在选择乐观性；应在新数据上再次评估。",
     "EDA操作性分解不等于真值，通用模块不包含完整ECG/EEG/EMG领域管线。",
     "不同被试与会话应分别导入；事件重叠/越界/缺段保留标记并排除有效条件汇总。",
-    "SCR检出不能自动证明特定情绪或压力，a.u.不能用于uS阈值比较。"
+    "SCR检出不能自动证明特定情绪或压力，a.u.不能用于uS阈值比较。",
+    "2026-10-30复核仍未穷尽所有方法；ospEDA、gmsEDA和Transformer分解未实现，详见docs/research-update-20261030.md。",
+    "GPU仅用于适合的矩阵运算，统计检验、ARIMA与EDA分解仍在CPU运行。"
   ],
   "references": [
     {
@@ -208,6 +212,68 @@
       "supports": "仅用于工具出处标注",
       "implementation": "具体API行为以已读官方源码及本地版本为准。",
       "assumptions": "工具论文不代替当前数据质量或生理有效性验证。"
+    },
+    {
+      "id": "EDA_BENCH2026",
+      "title": "Electrodermal Activity (EDA) for Stress Detection: A Comprehensive Survey and Benchmark",
+      "authors": [
+        "Gang Liu",
+        "Zixiong Ning"
+      ],
+      "year": 2026,
+      "url": "https://arxiv.org/html/2609.22622v1",
+      "read_scope": "摘要、预处理与分解、实验比较部分",
+      "status": "预印本",
+      "supports": "跨数据集比较分解与预处理，不假设一种流程通用最优。",
+      "implementation": "增加EDA分解选择、质量标记和描述特征；未复现其分类基准。",
+      "assumptions": "方法效果依赖数据与协议，未在用户真实数据上验证。"
+    },
+    {
+      "id": "EDA_ARTIFACT2026",
+      "title": "Artifact removal improves electrodermal waveforms but not downstream classification in a virtual-reality balance task",
+      "authors": [
+        "Haochen Chai",
+        "Qixu Zhu",
+        "Siyao Li",
+        "Fangfang Jiang"
+      ],
+      "year": 2026,
+      "url": "https://arxiv.org/html/2610.07438v1",
+      "read_scope": "摘要、方法和讨论",
+      "status": "预印本",
+      "supports": "波形改善不能直接等同下游效果改善。",
+      "implementation": "保留原始信号；可选伪迹排除不自动重构，不实施论文神经网络。",
+      "assumptions": "方法效果依赖数据与协议，未在用户真实数据上验证。"
+    },
+    {
+      "id": "OSP2026",
+      "title": "ospEDA: Orthogonal Subspace Projection for Electrodermal Activity Decomposition",
+      "authors": [
+        "Yongbin Lee",
+        "Youngsun Kong",
+        "Ki H Chon"
+      ],
+      "year": 2026,
+      "url": "https://pubmed.ncbi.nlm.nih.gov/42295969/",
+      "read_scope": "书目与摘要",
+      "status": "同行评审论文，未读全文",
+      "supports": "新的投影分解方法候选。",
+      "implementation": "未实现：没有完成原始实现与数值基准验证。",
+      "assumptions": "方法效果依赖数据与协议，未在用户真实数据上验证。"
+    },
+    {
+      "id": "GMS2026",
+      "title": "gmsEDA: Decomposition of Electrodermal Activity Signals Using Matrix Separation",
+      "authors": [
+        "Xuemei Chen et al."
+      ],
+      "year": 2026,
+      "url": "https://arxiv.org/abs/2608.14732",
+      "read_scope": "书目与摘要",
+      "status": "预印本",
+      "supports": "联合多条记录的矩阵分离。",
+      "implementation": "未实现：与当前单记录契约不同，不能替代为逐条处理。",
+      "assumptions": "方法效果依赖数据与协议，未在用户真实数据上验证。"
     }
   ]
 }

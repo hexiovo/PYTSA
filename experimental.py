@@ -107,6 +107,20 @@ def _peaks(phasic, fs, offset, relative, absolute, segment, nk):
     return rows
 
 
+def _validate_eda_segment_array(values, name, expected_length, segment):
+    try:
+        array = np.asarray(values, dtype=float)
+    except (TypeError, ValueError) as exc:
+        raise RuntimeError(f'EDA {name} 在连续段 {segment} 返回了非数值结果。') from exc
+    expected_shape = (int(expected_length),)
+    if array.shape != expected_shape:
+        raise RuntimeError(
+            f'EDA {name} 在连续段 {segment} 返回了错误形状；期望 {expected_shape}，实际 {array.shape}。')
+    if not np.isfinite(array).all():
+        raise RuntimeError(f'EDA {name} 在连续段 {segment} 返回 NaN/Inf；该段不会标记为有效。')
+    return array
+
+
 def _window_rows(signals, peaks, start, end, window, fs, step=None):
     rows = []
     time = signals['time'].to_numpy()
@@ -238,6 +252,7 @@ def analyze_eda(prepared, column, config, event_df=None):
     cfg = {'method': 'highpass', 'clean': 'neurokit', 'cutoff': .05,
            'relative_threshold': .1, 'absolute_threshold': .01, 'window_seconds': 60.,
            'window_step_seconds': None, 'baseline_correction': 'subtract_mean',
+           'min_us': None, 'max_us': None, 'max_slope_us_per_second': None,
            'start_seconds': 0., 'end_seconds': None,
            'baseline_start': -2., 'baseline_end': 0., 'response_start': 1., 'response_end': 5.}
     cfg.update(config)
@@ -251,7 +266,8 @@ def analyze_eda(prepared, column, config, event_df=None):
     scales = {'uS': 1., 'μS': 1., 'µS': 1., 'mS': 1000., 'nS': .001, 'a.u.': 1.}
     if unit not in scales:
         raise ValueError('请明确选择皮电单位：uS、mS、nS 或 a.u.；电阻/电压不能直接当皮电导。')
-    if cfg['method'] not in ('highpass', 'median') or cfg['clean'] not in ('neurokit', 'none'):
+    methods = ('highpass', 'median', 'cvxeda', 'sparse')
+    if cfg['method'] not in methods or cfg['clean'] not in ('neurokit', 'biosppy', 'none'):
         raise ValueError('不支持的皮电分解或清理方法。')
     numeric_keys = ['cutoff', 'relative_threshold', 'absolute_threshold', 'window_seconds',
                     'start_seconds', 'baseline_start', 'baseline_end', 'response_start', 'response_end']
@@ -260,7 +276,10 @@ def analyze_eda(prepared, column, config, event_df=None):
         if not np.isfinite(cfg[key]):
             raise ValueError(f'参数 {key} 必须为有限数值。')
     if not 0 < cfg['cutoff'] < fs / 2:
-        raise ValueError('分解截止频率必须大于0且小于Nyquist频率。')
+        if cfg['method'] == 'highpass':
+            raise ValueError('高通分解截止频率必须大于0且小于Nyquist频率。')
+    if cfg['clean'] == 'biosppy' and fs <= 10:
+        raise ValueError('BioSPPy 清理使用 5 Hz 低通，采样率须大于 10 Hz。')
     if not 0 <= cfg['relative_threshold'] <= 1 or cfg['absolute_threshold'] < 0:
         raise ValueError('相对阈值须在0至1之间，绝对阈值不能为负。')
     if cfg['window_seconds'] < 1 / fs:
@@ -273,6 +292,17 @@ def analyze_eda(prepared, column, config, event_df=None):
         raise ValueError('不支持的事件基线校正方式。')
     if not cfg['baseline_start'] < cfg['baseline_end'] <= 0 <= cfg['response_start'] < cfg['response_end']:
         raise ValueError('请设置刺激前基线窗（起点<终点<=0）和刺激后响应窗（0<=起点<终点）。')
+    quality_thresholds = ('min_us', 'max_us', 'max_slope_us_per_second')
+    for key in quality_thresholds:
+        value = cfg[key]
+        if value is not None and (not np.isfinite(float(value)) or float(value) < 0):
+            raise ValueError(f'{key} 必须为非负有限数值或留空。')
+        if value is not None:
+            cfg[key] = float(value)
+    if cfg['min_us'] is not None and cfg['max_us'] is not None and cfg['min_us'] >= cfg['max_us']:
+        raise ValueError('EDA 最小 uS 阈值必须小于最大 uS 阈值。')
+    if unit == 'a.u.' and any(cfg[key] is not None for key in quality_thresholds):
+        raise ValueError('min_us、max_us 和 max_slope_us_per_second 仅适用于已知的皮电导单位，不能用于 a.u.。')
     time_col = prepared.get('meta', {}).get('time_col')
     axis = source[time_col] if time_col and time_col in source else source.index
     if pd.api.types.is_datetime64_any_dtype(axis):
@@ -289,10 +319,27 @@ def analyze_eda(prepared, column, config, event_df=None):
         raise ValueError('窗口数量超过100000，请增大窗口时长。')
     raw = source[column].to_numpy(dtype=float, copy=True) * scales[unit]
     finite = np.isfinite(raw)
-    transitions = np.diff(np.r_[False, finite, False].astype(np.int8))
+    below_min = np.zeros(len(raw), dtype=bool) if cfg['min_us'] is None else finite & (raw < cfg['min_us'])
+    above_max = np.zeros(len(raw), dtype=bool) if cfg['max_us'] is None else finite & (raw > cfg['max_us'])
+    slope_exceeded = np.zeros(len(raw), dtype=bool)
+    slope_edges = np.zeros(max(0, len(raw) - 1), dtype=bool)
+    if cfg['max_slope_us_per_second'] is not None and len(raw) > 1:
+        slopes = np.abs(np.diff(raw)) * fs
+        slope_edges = np.isfinite(slopes) & (slopes > cfg['max_slope_us_per_second'])
+        edge_indices = np.flatnonzero(slope_edges)
+        slope_exceeded[edge_indices] = True
+        slope_exceeded[edge_indices + 1] = True
+    quality_invalid = below_min | above_max | slope_exceeded
+    quality_reason = np.full(len(raw), '', dtype=object)
+    for mask, reason in ((below_min, 'below_min_us'), (above_max, 'above_max_us'),
+                         (slope_exceeded, 'max_slope_exceeded')):
+        quality_reason[mask] = np.where(quality_reason[mask] == '', reason,
+                                        quality_reason[mask] + '; ' + reason)
+    analysis_valid = finite & ~quality_invalid
+    transitions = np.diff(np.r_[False, analysis_valid, False].astype(np.int8))
     starts, stops = np.flatnonzero(transitions == 1), np.flatnonzero(transitions == -1)
     if not any((stops - starts) / fs >= 20):
-        raise ValueError('需要至少一段20秒的连续有效皮电数据；不会跨缺失段滤波。')
+        raise ValueError('需要至少一段20秒的连续有效皮电数据；缺失与质量阈值掩码均会隔离，且不会插值或跨段滤波。')
     notes = ['EDA分解和SCR是方法估计，不能直接解释为压力、情绪或疾病。',
              '每个文件按单个连续实验记录处理；不同被试/会话请分别导入。',
              '滤波边界可能失真，建议使用足够长的记录并检查首尾曲线。',
@@ -305,8 +352,12 @@ def analyze_eda(prepared, column, config, event_df=None):
         if np.any(raw[finite] < 0):
             notes.append('发现负皮电导值；未自动删除，请核对单位、偏移或伪迹。')
     import neurokit2 as nk
+    if quality_invalid.any():
+        notes.append(f'质量阈值隔离了 {int(quality_invalid.sum())} 个样本；每段分别处理，不做插值或跨段分解。')
     signals = pd.DataFrame({'time': time, 'raw': raw, 'clean': np.nan,
-                            'tonic': np.nan, 'phasic': np.nan, 'valid': False})
+                            'tonic': np.nan, 'phasic': np.nan, 'valid': False,
+                            'quality_invalid': quality_invalid,
+                            'quality_reason': quality_reason})
     rows = []
     for number, (a, b) in enumerate(zip(starts, stops), 1):
         if (b - a) / fs < 20:
@@ -314,14 +365,27 @@ def analyze_eda(prepared, column, config, event_df=None):
             continue
         with warnings.catch_warnings(record=True) as caught:
             warnings.simplefilter('always')
-            cleaned = nk.eda_clean(raw[a:b], sampling_rate=fs, method=cfg['clean'])
+            cleaned_output = nk.eda_clean(raw[a:b], sampling_rate=fs, method=cfg['clean'])
+            cleaned = _validate_eda_segment_array(cleaned_output, 'clean', b - a, number)
             kwargs = {'cutoff': cfg['cutoff']} if cfg['method'] == 'highpass' else {}
-            parts = nk.eda_phasic(cleaned, sampling_rate=fs, method=cfg['method'], **kwargs)
-            phasic = parts['EDA_Phasic'].to_numpy()
+            try:
+                parts = nk.eda_phasic(cleaned, sampling_rate=fs, method=cfg['method'], **kwargs)
+            except ImportError as exc:
+                if cfg['method'] == 'cvxeda':
+                    raise ImportError('cvxEDA 分解需要可选依赖 cvxopt；请安装 cvxopt 后重试。') from exc
+                raise
+            except Exception as exc:
+                if cfg['method'] == 'sparse':
+                    raise RuntimeError(f'SparsEDA 在连续段 {number} 失败；该上游实现仍属实验性，未将失败段标记为成功：{exc}') from exc
+                raise RuntimeError(f'EDA 分解方法 {cfg["method"]} 在连续段 {number} 失败：{exc}') from exc
+            if not isinstance(parts, pd.DataFrame) or not {'EDA_Tonic', 'EDA_Phasic'}.issubset(parts.columns):
+                raise RuntimeError(f'EDA 分解方法 {cfg["method"]} 在连续段 {number} 返回了不含 EDA_Tonic/EDA_Phasic 的结果。')
+            tonic = _validate_eda_segment_array(parts['EDA_Tonic'], 'tonic', b - a, number)
+            phasic = _validate_eda_segment_array(parts['EDA_Phasic'], 'phasic', b - a, number)
             segment_peaks = _peaks(phasic, fs, time[a], cfg['relative_threshold'], absolute, number, nk)
         notes.extend(str(w.message) for w in caught)
         signals.loc[a:b-1, ['clean', 'tonic', 'phasic']] = np.column_stack(
-            [cleaned, parts['EDA_Tonic'].to_numpy(), phasic])
+            [cleaned, tonic, phasic])
         signals.loc[a:b-1, 'valid'] = True
         rows.extend(segment_peaks)
     peaks = pd.DataFrame(rows, columns=PEAK_COLUMNS)
@@ -336,6 +400,7 @@ def analyze_eda(prepared, column, config, event_df=None):
             'input_unit': unit, 'output_unit': 'a.u.' if unit == 'a.u.' else 'uS',
             'config': cfg, 'range_seconds': [start, end], 'neurokit2_version': version('neurokit2'),
             'missing_policy': 'process contiguous finite runs >=20s separately; no interpolation',
+            'quality_rule': 'User min/max uS and max absolute adjacent slope uS/s are applied before decomposition; flagged samples are invalid and split runs. No interpolation is performed.',
             'event_time_reference': 'seconds from first recording sample',
             'event_scr_rule': 'onset in [event+response_start,event+response_end)',
             'event_auc_rule': 'Trapezoidal signed integral of corrected clean samples in the half-open response window; no extrapolation to the right boundary; invalid events have NaN.',
@@ -346,7 +411,20 @@ def analyze_eda(prepared, column, config, event_df=None):
             'median_smoothing_seconds': 4 if cfg['method'] == 'median' else None,
             'source_type': prepared.get('meta', {}).get('status', 'USER_PROVIDED'),
             'references': ['EDA2026', 'NK_EDA', 'NK2021']}
+    if cfg['method'] == 'cvxeda':
+        meta['convergence_status'] = 'not exposed by NeuroKit API'
+        notes.append('cvxEDA 输出有限不保证优化已收敛；NeuroKit API 未公开求解器收敛状态。')
+    quality_summary = pd.DataFrame([{
+        'n_total': int(len(raw)), 'n_finite': int(finite.sum()),
+        'n_quality_invalid': int(quality_invalid.sum()),
+        'n_valid_after_quality': int(analysis_valid.sum()),
+        'fraction_quality_invalid': float(quality_invalid.sum() / len(raw)),
+        'n_below_min_us': int(below_min.sum()), 'n_above_max_us': int(above_max.sum()),
+        'n_slope_edges_exceeded': int(slope_edges.sum()),
+        'min_us': cfg['min_us'], 'max_us': cfg['max_us'],
+        'max_slope_us_per_second': cfg['max_slope_us_per_second'],
+    }])
     return {'tables': {'eda_signals': signals, 'eda_peaks': peaks,
                        'eda_windows': pd.DataFrame(windows), 'eda_events': events,
-                       'eda_event_summary': grouped},
+                       'eda_event_summary': grouped, 'eda_quality_summary': quality_summary},
             'warnings': list(dict.fromkeys(notes)), 'meta': meta}

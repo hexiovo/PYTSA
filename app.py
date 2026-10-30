@@ -14,21 +14,29 @@ import threading
 import time
 import traceback
 import uuid
+import webbrowser
 from pathlib import Path
 from tkinter import filedialog, messagebox, ttk
 import tkinter as tk
 from tkinter import font as tkfont
 
+import runtime_settings as _runtime_settings
+
+_runtime_settings.activate_external_environment()
+
+import settings_ui as _settings_ui
+from settings_ui import EDA_CLEAN_OPTIONS, EDA_METHOD_OPTIONS, SettingsMixin
 import workflow_ui as _workflow_ui
 from workflow_ui import WorkflowCancelled, WorkflowMixin
 from additional_controls import AdditionalControlsMixin
 
 
 APP_NAME = "PYTSA"
-APP_VERSION = "1.2.0"
-APP_USER_MODEL_ID = "PYTSA.TimeSeriesLab.1"
-PAGE_ORDER = ("input", "prepare", "matrices", "forecast", "eda", "workflow")
+APP_VERSION = "1.3.1"
+APP_USER_MODEL_ID = "PYTSA.TimeSeriesLab.1.3.1"
+PAGE_ORDER = ("input", "prepare", "matrices", "forecast", "eda", "workflow", "settings")
 CAPTURE_STEPS = (
+    ("home", 0.0, "home"),
     ("input", 0.0, "input"),
     ("input", 0.55, "input-time-options"),
     ("prepare", 0.0, "prepare"),
@@ -38,14 +46,18 @@ CAPTURE_STEPS = (
     ("matrices", 0.0, "matrices"),
     ("matrices", 1.0, "matrix-results"),
     ("forecast", 0.0, "forecast"),
+    ("forecast", 0.0, "forecast-export"),
     ("forecast", 0.25, "forecast-validation-options"),
     ("forecast", 0.95, "forecast-curves"),
     ("forecast", 1.0, "forecast-results"),
     ("eda", 0.0, "eda"),
     ("eda", 0.28, "eda-window-options"),
     ("eda", 0.60, "eda-curves"),
+    ("eda", 0.60, "eda-quality-summary"),
     ("eda", 1.0, "eda-results"),
     ("workflow", 0.0, "workflow"),
+    ("settings", 0.0, "settings"),
+    ("settings", 0.38, "settings-environment"),
 )
 PAGE_TITLES = {
     "input": ("01", "数据输入", "导入单段数据"),
@@ -54,24 +66,35 @@ PAGE_TITLES = {
     "forecast": ("04", "预测、导出与方法", "比较模型并保存"),
     "eda": ("05", "实验 / 皮电", "分析皮电与事件"),
     "workflow": ("06", "工作台", "项目、批次与历史"),
+    "settings": ("07", "配置与环境", "运行设置与依赖"),
 }
 
 COLORS = {
-    "canvas": "#FCF8F2",
-    "ink": "#27324A",
-    "green": "#20C46A",
-    "mint": "#E9FBF1",
-    "sky": "#E6F7FB",
-    "coral": "#FFB4AA",
-    "lemon": "#F1F9D8",
-    "lavender": "#E6E6FA",
+    "canvas": "#F3F6FA",
+    "ink": "#243447",
+    "green": "#0F766E",
+    "mint": "#E8F5F2",
+    "sky": "#EEF3F8",
+    "coral": "#F8E6E2",
+    "lemon": "#F5F4EB",
+    "lavender": "#E9EDF5",
     "white": "#FFFFFF",
-    "muted": "#5D687D",
-    "warning": "#8D3A2F",
-    "line": "#C7CFD9",
+    "muted": "#607086",
+    "warning": "#9A3412",
+    "line": "#D6DEE8",
+    "sidebar": "#1E293B",
+    "sidebar_text": "#E6EEF5",
+    "sidebar_muted": "#B4C2D0",
+    "nav_active": "#DDF1EC",
+    "nav_active_text": "#105E57",
+    "nav_hover": "#334155",
+    "surface_muted": "#F8FAFC",
+    "primary_hover": "#0B625B",
+    "control_hover": "#EEF4F6",
 }
 # The workflow mixin shares the application's single palette at widget-build time.
 _workflow_ui.COLORS = COLORS
+_settings_ui.COLORS = COLORS
 
 MATRIX_LABELS = {
     "pearson": "Pearson 相关矩阵",
@@ -84,6 +107,7 @@ MATRIX_LABELS = {
     "lagged": "指定滞后相关矩阵",
     "lagged_correlation": "指定滞后相关矩阵",
     "coherence": "频带平均平方相干矩阵",
+    "kendall": "Kendall τ 相关矩阵",
     "standardized_euclidean": "标准化欧式距离矩阵",
     "euclidean": "标准化欧式距离矩阵",
 }
@@ -95,13 +119,19 @@ def resource_path(relative: str) -> Path:
     return base / relative
 
 
+_APP_USER_MODEL_ID_SET_FOR: str | None = None
+
+
 def set_windows_identity_and_dpi() -> None:
+    global _APP_USER_MODEL_ID_SET_FOR
     if os.name != "nt":
         return
-    try:
-        ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(APP_USER_MODEL_ID)
-    except Exception:
-        pass
+    if _APP_USER_MODEL_ID_SET_FOR != APP_USER_MODEL_ID:
+        set_app_id = ctypes.WinDLL("shell32", use_last_error=True).SetCurrentProcessExplicitAppUserModelID
+        set_app_id.argtypes = [ctypes.c_wchar_p]
+        set_app_id.restype = ctypes.c_long
+        if set_app_id(APP_USER_MODEL_ID) == 0:
+            _APP_USER_MODEL_ID_SET_FOR = APP_USER_MODEL_ID
     try:
         if ctypes.windll.user32.SetProcessDpiAwarenessContext(ctypes.c_void_p(-4)):
             return
@@ -121,6 +151,144 @@ def set_windows_identity_and_dpi() -> None:
         ctypes.windll.user32.SetProcessDPIAware()
     except Exception:
         pass
+
+
+def _set_windows_window_icons(root: tk.Tk, icon_path: Path) -> list[int]:
+    if os.name != "nt":
+        return []
+    user32 = ctypes.WinDLL("user32", use_last_error=True)
+    load_image = user32.LoadImageW
+    load_image.argtypes = [
+        ctypes.c_void_p, ctypes.c_wchar_p, ctypes.c_uint,
+        ctypes.c_int, ctypes.c_int, ctypes.c_uint,
+    ]
+    load_image.restype = ctypes.c_void_p
+    send_message = user32.SendMessageW
+    send_message.argtypes = [
+        ctypes.c_void_p, ctypes.c_uint, ctypes.c_size_t, ctypes.c_ssize_t,
+    ]
+    send_message.restype = ctypes.c_ssize_t
+    get_ancestor = user32.GetAncestor
+    get_ancestor.argtypes = [ctypes.c_void_p, ctypes.c_uint]
+    get_ancestor.restype = ctypes.c_void_p
+    image_icon = 1
+    load_from_file = 0x0010
+    wm_seticon = 0x0080
+    hwnd = get_ancestor(ctypes.c_void_p(root.winfo_id()), 2)
+    loaded = getattr(root, "_pytsa_icon_handles", None)
+    if loaded is None:
+        loaded = [int(load_image(None, str(icon_path), image_icon, size, size, load_from_file) or 0)
+                  for size in (16, 64)]
+        root._pytsa_icon_handles = loaded
+    for icon_type, handle in enumerate(loaded):
+        if handle:
+            send_message(hwnd, wm_seticon, icon_type, handle)
+    return loaded
+
+
+def _show_startup_splash(root: tk.Tk) -> tk.Frame:
+    """Paint a small Tk startup surface before the full window is constructed."""
+    root.withdraw()
+    # The first visible Tk window determines the initial taskbar icon.
+    # Set both this already-created root and future dialogs before mapping it.
+    icon = resource_path("assets/PYTSA.ico")
+    if os.name == "nt" and icon.is_file():
+        root.iconbitmap(bitmap=str(icon))
+        root.iconbitmap(default=str(icon))
+    root.title(f"{APP_NAME} · 正在启动")
+    root.configure(bg=COLORS["canvas"])
+    width, height = 560, 250
+    screen_width = root.winfo_screenwidth()
+    screen_height = root.winfo_screenheight()
+    x = max(0, (screen_width - width) // 2)
+    y = max(0, (screen_height - height) // 2)
+    root.geometry(f"{width}x{height}+{x}+{y}")
+    root.resizable(False, False)
+
+    splash = tk.Frame(
+        root,
+        bg=COLORS["white"],
+        highlightbackground=COLORS["line"],
+        highlightthickness=1,
+    )
+    splash.place(relx=0, rely=0, relwidth=1, relheight=1)
+    tk.Frame(splash, bg=COLORS["green"], height=5).pack(fill="x")
+    body = tk.Frame(splash, bg=COLORS["white"])
+    body.pack(fill="both", expand=True, padx=32, pady=24)
+    logo_path = resource_path("assets/PYTSA.png")
+    if logo_path.is_file():
+        try:
+            logo = tk.PhotoImage(file=str(logo_path))
+            if logo.width() > 128 or logo.height() > 128:
+                logo = logo.subsample(2, 2)
+            splash.logo_image = logo
+            tk.Label(body, image=logo, bg=COLORS["white"]).pack(side="left", padx=(0, 25))
+        except tk.TclError:
+            pass
+    copy = tk.Frame(body, bg=COLORS["white"])
+    copy.pack(side="left", fill="both", expand=True)
+    tk.Label(
+        copy,
+        text="PYTSA",
+        bg=COLORS["white"],
+        fg=COLORS["ink"],
+        anchor="w",
+        font=(_body_font(root), 25, "bold"),
+    ).pack(anchor="w", pady=(14, 2))
+    tk.Label(
+        copy,
+        text="正在准备分析工作台…",
+        bg=COLORS["white"],
+        fg=COLORS["muted"],
+        anchor="w",
+        font=(_body_font(root), 11),
+    ).pack(anchor="w")
+    root.deiconify()
+    root.update_idletasks()
+    splash.lift()
+    root.update()
+    return splash
+
+
+def _close_pyinstaller_splash() -> None:
+    """Hand off from PyInstaller's extraction splash to the Tk startup surface."""
+    try:
+        import pyi_splash
+    except ImportError:
+        return
+    try:
+        pyi_splash.close()
+    except Exception:
+        pass
+
+
+def _show_startup_error(root: tk.Tk | None, exc: BaseException) -> None:
+    detail = f"{type(exc).__name__}: {exc}"
+    try:
+        traceback.print_exc(file=sys.stderr)
+    except Exception:
+        pass
+    if root is not None:
+        try:
+            root.deiconify()
+            messagebox.showerror(
+                f"{APP_NAME} 启动失败",
+                f"PYTSA 窗口初始化失败，程序将退出。\n\n{detail}",
+                parent=root,
+            )
+            return
+        except Exception:
+            pass
+    if os.name == "nt":
+        try:
+            ctypes.windll.user32.MessageBoxW(
+                0, f"PYTSA 窗口初始化失败，程序将退出。\n\n{detail}",
+                f"{APP_NAME} 启动失败", 0x10,
+            )
+            return
+        except Exception:
+            pass
+    print(f"{APP_NAME} startup failed: {detail}", file=sys.stderr)
 
 
 def _pandas():
@@ -174,9 +342,9 @@ class ScrollablePage(tk.Frame):
         self.canvas.configure(yscrollcommand=self.scrollbar.set)
         self.inner = tk.Frame(self.canvas, bg=background)
         self.window_id = self.canvas.create_window((0, 0), window=self.inner, anchor="nw")
+        self._wheel_remainder = 0.0
         self.inner.bind("<Configure>", self._update_scroll_region)
         self.canvas.bind("<Configure>", self._fit_inner_width)
-        self.canvas.bind("<MouseWheel>", self._on_mousewheel)
         self.canvas.pack(side="left", fill="both", expand=True)
         self.scrollbar.pack(side="right", fill="y")
 
@@ -186,12 +354,8 @@ class ScrollablePage(tk.Frame):
     def _fit_inner_width(self, event) -> None:
         self.canvas.itemconfigure(self.window_id, width=event.width)
 
-    def _on_mousewheel(self, event) -> None:
-        if self.winfo_ismapped():
-            self.canvas.yview_scroll(int(-1 * (event.delta / 120)), "units")
 
-
-class PytsaApp(AdditionalControlsMixin, WorkflowMixin):
+class PytsaApp(SettingsMixin, AdditionalControlsMixin, WorkflowMixin):
     def __init__(
         self,
         root: tk.Tk,
@@ -199,6 +363,7 @@ class PytsaApp(AdditionalControlsMixin, WorkflowMixin):
         capture_eda_only: bool = False,
     ) -> None:
         self.root = root
+        self._app_version = APP_VERSION
         self.capture_dir = capture_dir
         self.capture_mode = capture_dir is not None
         self.capture_eda_only = capture_eda_only
@@ -239,12 +404,14 @@ class PytsaApp(AdditionalControlsMixin, WorkflowMixin):
 
         self._init_variables()
         self._init_workflow_state()
+        self._init_settings_state()
         _configure_matplotlib_fonts()
         self._configure_window()
         self._configure_styles()
         self._build_shell()
         self._build_pages()
-        self.show_page("input")
+        self._bind_page_wheel_routing()
+        self.show_page("home")
         self._populate_method_notes()
         self.root.after(100, self._drain_worker_queue)
         if self.capture_mode:
@@ -306,15 +473,31 @@ class PytsaApp(AdditionalControlsMixin, WorkflowMixin):
     def _configure_window(self) -> None:
         self.root.title(f"{APP_NAME} · 通用时间序列与实验信号分析")
         self.root.configure(bg=COLORS["canvas"])
-        self.root.geometry("1380x880")
-        self.root.minsize(1080, 720)
+        screen_width = self.root.winfo_screenwidth()
+        screen_height = self.root.winfo_screenheight()
+        width = min(1380, max(760, screen_width - 40))
+        height = min(880, max(640, screen_height - 80))
+        x = max(0, (screen_width - width) // 2)
+        y = max(0, (screen_height - height) // 2)
+        self.root.geometry(f"{width}x{height}+{x}+{y}")
+        self.root.resizable(True, True)
+        self.root.minsize(min(1080, width), min(720, height))
         self.root.option_add("*tearOff", False)
         icon = resource_path("assets/PYTSA.ico")
         if os.name == "nt" and icon.is_file():
             try:
+                self.root.iconbitmap(bitmap=str(icon))
                 self.root.iconbitmap(default=str(icon))
-            except Exception:
+            except tk.TclError:
                 pass
+            _set_windows_window_icons(self.root, icon)
+            # Tk can recreate its native wrapper while mapping the window.
+            # Reapply the same owned HICONs after that transition.
+            def apply_mapped_icons(event=None):
+                if event is None or event.widget is self.root:
+                    _set_windows_window_icons(self.root, icon)
+            self.root.bind("<Map>", apply_mapped_icons, add="+")
+            self.root.after_idle(apply_mapped_icons)
 
     def _configure_styles(self) -> None:
         style = ttk.Style(self.root)
@@ -325,23 +508,24 @@ class PytsaApp(AdditionalControlsMixin, WorkflowMixin):
         style.configure(
             "Treeview",
             font=(self.font_family, 10),
-            rowheight=25,
+            rowheight=28,
             background=COLORS["white"],
             fieldbackground=COLORS["white"],
             foreground=COLORS["ink"],
-            bordercolor=COLORS["ink"],
-            borderwidth=1,
+            bordercolor=COLORS["line"],
+            borderwidth=0,
         )
         style.configure(
             "Treeview.Heading",
             font=(self.font_family, 10, "bold"),
-            background=COLORS["lavender"],
+            background=COLORS["surface_muted"],
             foreground=COLORS["ink"],
             relief="flat",
+            padding=(10, 8),
         )
         style.map(
             "Treeview",
-            background=[("selected", COLORS["sky"])],
+            background=[("selected", COLORS["nav_active"])],
             foreground=[("selected", COLORS["ink"])],
         )
         style.configure(
@@ -349,185 +533,424 @@ class PytsaApp(AdditionalControlsMixin, WorkflowMixin):
             fieldbackground=COLORS["white"],
             background=COLORS["white"],
             foreground=COLORS["ink"],
-            arrowcolor=COLORS["ink"],
-            padding=5,
+            arrowcolor=COLORS["muted"],
+            bordercolor=COLORS["line"],
+            lightcolor=COLORS["line"],
+            darkcolor=COLORS["line"],
+            padding=(8, 6),
+        )
+        style.map(
+            "TCombobox",
+            fieldbackground=[("readonly", COLORS["white"]), ("disabled", COLORS["surface_muted"])],
+            foreground=[("disabled", COLORS["muted"])],
+            selectbackground=[("readonly", COLORS["white"])],
+            selectforeground=[("readonly", COLORS["ink"])],
         )
         style.configure(
             "TNotebook",
             background=COLORS["canvas"],
             borderwidth=0,
-            tabmargins=(2, 2, 2, 0),
+            tabmargins=(4, 8, 4, 0),
         )
         style.configure(
             "TNotebook.Tab",
             font=(self.font_family, 10, "bold"),
-            padding=(12, 8),
-            background=COLORS["lavender"],
+            padding=(14, 9),
+            background=COLORS["surface_muted"],
             foreground=COLORS["ink"],
+            borderwidth=0,
         )
         style.map(
             "TNotebook.Tab",
-            background=[("selected", COLORS["green"])],
-            foreground=[("selected", COLORS["ink"])],
+            background=[("selected", COLORS["nav_active"]), ("active", COLORS["control_hover"])],
+            foreground=[("selected", COLORS["nav_active_text"])],
         )
+        style.configure(
+            "TCheckbutton",
+            background=COLORS["white"],
+            foreground=COLORS["ink"],
+            padding=4,
+        )
+        style.map("TCheckbutton", foreground=[("disabled", COLORS["muted"])])
+        style.configure(
+            "Vertical.TScrollbar",
+            background=COLORS["line"],
+            troughcolor=COLORS["canvas"],
+            bordercolor=COLORS["canvas"],
+            arrowcolor=COLORS["muted"],
+        )
+
+    def _bind_page_wheel_routing(self) -> None:
+        """Route page wheel events once, while leaving native scroll widgets alone."""
+        self.root.bind_all("<MouseWheel>", self._route_mousewheel, add="+")
+        self.root.bind_all("<Button-4>", self._route_mousewheel, add="+")
+        self.root.bind_all("<Button-5>", self._route_mousewheel, add="+")
+
+    def _page_for_widget(self, widget: tk.Misc) -> tuple[str, ScrollablePage] | None:
+        for page_id, page in self.pages.items():
+            current = widget
+            while current is not None:
+                if current is page:
+                    return page_id, page
+                if current is self.root:
+                    break
+                current = getattr(current, "master", None)
+        return None
+
+    def _route_mousewheel(self, event) -> str | None:
+        widget = getattr(event, "widget", None)
+        if widget is None:
+            return None
+
+        match = self._page_for_widget(widget)
+        if match is None:
+            return None
+        page_id, page = match
+        if page_id != getattr(self, "current_page", None) or not page.winfo_ismapped():
+            return None
+
+        try:
+            widget_class = widget.winfo_class().casefold()
+        except (AttributeError, tk.TclError):
+            widget_class = ""
+        native_wheel_classes = {
+            "text", "listbox", "treeview", "ttreeview", "combobox", "tcombobox",
+            "scrollbar", "tscrollbar", "canvas",
+        }
+        if widget is not page.canvas and widget_class in native_wheel_classes:
+            return None
+
+        delta = getattr(event, "delta", 0) or 0
+        number = getattr(event, "num", None)
+        try:
+            delta = float(delta)
+        except (TypeError, ValueError):
+            return None
+
+        if delta:
+            if os.name == "nt":
+                fraction = -delta / 120.0
+            elif sys.platform == "darwin":
+                fraction = -delta
+            else:
+                fraction = -delta / 120.0
+        elif number == 4:
+            fraction = -1.0
+        elif number == 5:
+            fraction = 1.0
+        else:
+            return None
+
+        accumulated = page._wheel_remainder + fraction
+        units = int(accumulated)
+        page._wheel_remainder = accumulated - units
+        if units:
+            page.canvas.yview_scroll(units, "units")
+        return "break"
 
     def _build_shell(self) -> None:
         self.root.grid_columnconfigure(1, weight=1)
         self.root.grid_rowconfigure(0, weight=1)
-        self.sidebar = tk.Frame(self.root, bg=COLORS["sky"], width=245)
+        self.sidebar = tk.Frame(self.root, bg=COLORS["sidebar"], width=245)
         self.sidebar.grid(row=0, column=0, sticky="nsw")
         self.sidebar.grid_propagate(False)
         self.workspace = tk.Frame(self.root, bg=COLORS["canvas"])
-        self.workspace.grid(row=0, column=1, sticky="nsew", padx=(16, 18), pady=(16, 8))
+        self.workspace.grid(row=0, column=1, sticky="nsew", padx=(18, 20), pady=(18, 8))
         self.workspace.grid_rowconfigure(0, weight=1)
         self.workspace.grid_columnconfigure(0, weight=1)
 
         tk.Label(
             self.sidebar,
             text="PYTSA",
-            bg=COLORS["sky"],
-            fg=COLORS["ink"],
-            font=(self.font_family, 25, "bold"),
+            bg=COLORS["sidebar"],
+            fg=COLORS["white"],
+            font=(self.font_family, 24, "bold"),
             anchor="w",
-        ).pack(fill="x", padx=20, pady=(22, 0))
+        ).pack(fill="x", padx=20, pady=(17, 1))
         tk.Label(
             self.sidebar,
             text="TIME SERIES LAB",
-            bg=COLORS["sky"],
-            fg=COLORS["muted"],
+            bg=COLORS["sidebar"],
+            fg=COLORS["sidebar_muted"],
             font=(self.font_family, 9, "bold"),
             anchor="w",
-        ).pack(fill="x", padx=22, pady=(0, 18))
+        ).pack(fill="x", padx=22, pady=(0, 14))
 
-        self.nav_host = tk.Frame(self.sidebar, bg=COLORS["sky"])
+        self.nav_host = tk.Frame(self.sidebar, bg=COLORS["sidebar"])
         self.nav_host.pack(fill="x", padx=12)
-        for page_id in PAGE_ORDER:
-            index, title, subtitle = PAGE_TITLES[page_id]
+        for page_id in ("home",) + PAGE_ORDER:
+            if page_id == "home":
+                nav_text = "⌂   欢迎首页\n开始、示例与指南"
+            else:
+                index, title, subtitle = PAGE_TITLES[page_id]
+                nav_text = f"{index}   {title}\n{subtitle}"
             btn = tk.Button(
                 self.nav_host,
-                text=f"{index}   {title}\n       {subtitle}",
+                text=nav_text,
                 anchor="w",
                 justify="left",
-                wraplength=205,
+                wraplength=210,
                 font=(self.font_family, 10, "bold"),
-                fg=COLORS["ink"],
-                bg=COLORS["white"],
-                activebackground=COLORS["lemon"],
-                activeforeground=COLORS["ink"],
-                relief="solid",
-                bd=2,
+                fg=COLORS["sidebar_text"],
+                bg=COLORS["sidebar"],
+                activebackground=COLORS["nav_hover"],
+                activeforeground=COLORS["white"],
+                relief="flat",
+                bd=0,
+                highlightthickness=1,
+                highlightbackground=COLORS["sidebar"],
+                highlightcolor=COLORS["green"],
                 padx=10,
-                pady=10,
+                pady=6,
                 command=lambda pid=page_id: self.show_page(pid),
             )
-            btn.pack(fill="x", pady=5)
+            btn.pack(fill="x", pady=2)
             self.page_buttons[page_id] = btn
 
-        tk.Frame(self.sidebar, bg=COLORS["sky"]).pack(fill="both", expand=True)
+        tk.Frame(self.sidebar, bg=COLORS["sidebar"]).pack(fill="both", expand=True)
         tk.Label(
             self.sidebar,
             text="离线分析 · 原始文件只读\n不连接传感器或远程服务",
-            bg=COLORS["sky"],
-            fg=COLORS["muted"],
+            bg=COLORS["sidebar"],
+            fg=COLORS["sidebar_muted"],
             justify="left",
             font=(self.font_family, 9),
-        ).pack(fill="x", padx=20, pady=(0, 18))
+        ).pack(fill="x", padx=20, pady=(0, 12))
 
         self.status_bar = tk.Frame(
-            self.root, bg=COLORS["lemon"], highlightbackground=COLORS["ink"], highlightthickness=2
+            self.root,
+            bg=COLORS["surface_muted"],
+            highlightbackground=COLORS["line"],
+            highlightthickness=1,
         )
         self.status_bar.grid(row=1, column=0, columnspan=2, sticky="ew", padx=14, pady=(2, 12))
         self.status_label = tk.Label(
             self.status_bar,
             textvariable=self.status_var,
-            bg=COLORS["lemon"],
+            bg=COLORS["surface_muted"],
             fg=COLORS["ink"],
             anchor="w",
             font=(self.font_family, 9),
-            padx=10,
-            pady=6,
+            padx=12,
+            pady=8,
         )
         self.status_label.pack(fill="x")
 
     def _build_pages(self) -> None:
         self.pages = {}
-        for page_id in PAGE_ORDER:
+        for page_id in ("home",) + PAGE_ORDER:
             page = ScrollablePage(self.workspace, COLORS["canvas"])
             page.grid(row=0, column=0, sticky="nsew")
             page.grid_remove()
             self.pages[page_id] = page
+        self._build_home_page(self.pages["home"].inner)
         self._build_input_page(self.pages["input"].inner)
         self._build_prepare_page(self.pages["prepare"].inner)
         self._build_matrix_page(self.pages["matrices"].inner)
         self._build_forecast_page(self.pages["forecast"].inner)
         self._build_eda_page(self.pages["eda"].inner)
         self._build_workflow_page(self.pages["workflow"].inner)
+        self._build_settings_page(self.pages["settings"].inner)
+
+    def _build_home_page(self, parent: tk.Misc) -> None:
+        self._title_plaque(
+            parent,
+            "欢迎使用 PYTSA",
+            "本地时间序列与实验信号分析工具。选择一个入口开始，原始文件保持只读。",
+            COLORS["mint"],
+        )
+        start = self._card(
+            parent,
+            "快速开始",
+            "可先用合成数据熟悉页面，也可以直接导入自己的单段记录。",
+            COLORS["mint"],
+        )
+        start.grid_columnconfigure(1, weight=1)
+        import_button = self._action_button(
+            start, "导入真实数据", lambda: self.show_page("input"), "green", track_busy=False
+        )
+        import_button.shadow_wrapper.grid(row=0, column=0, padx=6, pady=8, sticky="w")
+        demo_button = self._action_button(
+            start, "加载通用合成示例", self._load_general_demo_from_home, "green", track_busy=False
+        )
+        demo_button.shadow_wrapper.grid(row=0, column=1, padx=6, pady=8, sticky="w")
+        tk.Label(
+            start,
+            text="示例是程序生成的合成数据，不含真实被试或传感器记录。",
+            bg=COLORS["white"],
+            fg=COLORS["muted"],
+            anchor="w",
+            font=(self.font_family, 9),
+        ).grid(row=1, column=0, columnspan=2, sticky="ew", padx=6, pady=(0, 8))
+
+        steps = self._card(
+            parent,
+            "常用流程",
+            "每个步骤都可以从左侧编号导航；主页可随时返回。",
+            COLORS["white"],
+        )
+        steps.grid_columnconfigure(0, weight=1)
+        for row, text in enumerate((
+            "01  数据输入：读取 CSV、TSV、TXT 或 Excel，确认时间列、信号列和采样率。",
+            "02  预处理与分析：检查缺失与重复时间，选择探索性填补、滤波和变换。",
+            "03  指标矩阵：查看统计量、频谱、相关与距离矩阵。",
+            "04  预测与导出：比较预测模型、填写报告信息并导出离线结果。",
+            "05  实验 / 皮电：选择皮电单位、清理方法、窗口和事件标签。",
+            "06  工作台：保存项目与参数模板，管理批次、运行历史和日志。",
+            "07  配置与环境：导入导出完整参数，设置并行资源并检测可用组件。",
+        )):
+            tk.Label(
+                steps,
+                text=text,
+                bg=COLORS["white"],
+                fg=COLORS["ink"],
+                anchor="w",
+                justify="left",
+                font=(self.font_family, 10),
+                padx=6,
+                pady=3,
+            ).grid(row=row, column=0, sticky="ew")
+
+        more = self._card(
+            parent,
+            "操作指南、工作台与配置",
+            "查看带界面截图的中文操作指南，管理项目模板，或打开运行环境设置。",
+            COLORS["sky"],
+        )
+        more.grid_columnconfigure(2, weight=1)
+        guide_button = self._action_button(
+            more, "打开截图操作指南", self._open_local_guide, "coral", track_busy=False
+        )
+        guide_button.shadow_wrapper.grid(row=0, column=0, padx=6, pady=8, sticky="w")
+        workspace_button = self._action_button(
+            more, "打开工作台", lambda: self.show_page("workflow"), "green", track_busy=False
+        )
+        workspace_button.shadow_wrapper.grid(row=0, column=1, padx=6, pady=8, sticky="w")
+        settings_button = self._action_button(
+            more, "配置与环境", lambda: self.show_page("settings"), "lavender", track_busy=False
+        )
+        settings_button.shadow_wrapper.grid(row=0, column=2, padx=6, pady=8, sticky="w")
+
+        tk.Label(
+            parent,
+            text=f"PYTSA {APP_VERSION}  ·  离线分析  ·  不连接传感器或远程服务",
+            bg=COLORS["canvas"],
+            fg=COLORS["muted"],
+            anchor="e",
+            font=(self.font_family, 9),
+        ).pack(fill="x", padx=14, pady=(0, 12))
+
+    def _load_general_demo_from_home(self) -> None:
+        self.show_page("input")
+        self.load_demo()
+
+    def _open_local_guide(self) -> None:
+        guide = resource_path("docs/操作指南.html")
+        if not guide.is_file():
+            messagebox.showerror(
+                "找不到操作指南",
+                f"未找到随程序打包的操作指南：\n{guide}",
+                parent=self.root,
+            )
+            return
+        try:
+            opened = webbrowser.open(guide.resolve().as_uri(), new=2)
+        except Exception as exc:
+            messagebox.showerror(
+                "无法打开操作指南",
+                f"{type(exc).__name__}: {exc}\n\n{guide}",
+                parent=self.root,
+            )
+            return
+        if not opened:
+            messagebox.showerror(
+                "无法打开操作指南",
+                f"系统没有打开本地浏览器。你可以直接打开此文件：\n{guide}",
+                parent=self.root,
+            )
 
     def _title_plaque(self, parent: tk.Misc, title: str, subtitle: str, color: str) -> None:
         plaque = tk.Frame(
             parent,
-            bg=color,
-            highlightbackground=COLORS["ink"],
-            highlightthickness=2,
+            bg=COLORS["white"],
+            highlightbackground=COLORS["line"],
+            highlightthickness=1,
         )
-        plaque.pack(fill="x", padx=10, pady=(10, 13))
+        plaque.pack(fill="x", padx=12, pady=(12, 16))
+        tk.Frame(plaque, bg=COLORS["green"], height=3).pack(fill="x")
         tk.Label(
             plaque,
             text=title,
-            bg=color,
+            bg=COLORS["white"],
             fg=COLORS["ink"],
             anchor="w",
-            font=(self.font_family, 18, "bold"),
-            padx=14,
+            font=(self.font_family, 19, "bold"),
+            padx=18,
             pady=8,
-        ).pack(fill="x")
-        tk.Label(
+        ).pack(fill="x", pady=(6, 0))
+        subtitle_label = tk.Label(
             plaque,
             text=subtitle,
-            bg=color,
-            fg=COLORS["ink"],
+            bg=COLORS["white"],
+            fg=COLORS["muted"],
             anchor="w",
+            justify="left",
+            wraplength=980,
             font=(self.font_family, 10),
-            padx=14,
-            pady=8,
-        ).pack(fill="x")
+            padx=18,
+            pady=4,
+        )
+        subtitle_label.pack(fill="x", pady=(0, 10))
+        subtitle_label.bind(
+            "<Configure>",
+            lambda event, label=subtitle_label: label.configure(
+                wraplength=max(280, event.width - 36)
+            ),
+        )
 
     def _card(self, parent: tk.Misc, title: str, subtitle: str = "", color: str | None = None):
-        outer = tk.Frame(parent, bg=COLORS["ink"], padx=0, pady=0)
-        outer.pack(fill="x", padx=(10, 14), pady=(0, 12))
+        outer = tk.Frame(parent, bg=COLORS["canvas"])
+        outer.pack(fill="x", padx=12, pady=(0, 14))
         card = tk.Frame(
             outer,
-            bg=color or COLORS["white"],
-            highlightbackground=COLORS["ink"],
-            highlightthickness=2,
+            bg=COLORS["white"],
+            highlightbackground=COLORS["line"],
+            highlightthickness=1,
         )
-        card.pack(fill="both", expand=True, padx=(0, 5), pady=(0, 5))
+        card.pack(fill="both", expand=True)
         card.grid_columnconfigure(0, weight=1)
         tk.Label(
             card,
             text=title,
-            bg=color or COLORS["white"],
+            bg=COLORS["white"],
             fg=COLORS["ink"],
             anchor="w",
             font=(self.font_family, 13, "bold"),
-            padx=13,
-            pady=8,
-        ).grid(row=0, column=0, sticky="ew")
+            padx=16,
+            pady=7,
+        ).grid(row=0, column=0, sticky="ew", pady=(5, 0))
         if subtitle:
-            tk.Label(
+            subtitle_label = tk.Label(
                 card,
                 text=subtitle,
-                bg=color or COLORS["white"],
+                bg=COLORS["white"],
                 fg=COLORS["muted"],
                 anchor="w",
                 justify="left",
                 wraplength=980,
                 font=(self.font_family, 9),
-                padx=13,
-                pady=4,
-            ).grid(row=1, column=0, sticky="ew")
-        card.content = tk.Frame(card, bg=color or COLORS["white"])
-        card.content.grid(row=2, column=0, sticky="nsew", padx=12, pady=(3, 12))
+                padx=16,
+                pady=3,
+            )
+            subtitle_label.grid(row=1, column=0, sticky="ew", pady=(0, 6))
+            subtitle_label.bind(
+                "<Configure>",
+                lambda event, label=subtitle_label: label.configure(
+                    wraplength=max(280, event.width - 32)
+                ),
+            )
+        card.content = tk.Frame(card, bg=COLORS["white"])
+        card.content.grid(row=2, column=0, sticky="nsew", padx=16, pady=(3, 16))
         card.grid_rowconfigure(2, weight=1)
         return card.content
 
@@ -554,13 +977,21 @@ class PytsaApp(AdditionalControlsMixin, WorkflowMixin):
             bg=COLORS["white"],
             fg=COLORS["ink"],
             insertbackground=COLORS["ink"],
-            highlightbackground=COLORS["ink"],
+            highlightbackground=COLORS["line"],
             highlightcolor=COLORS["green"],
-            highlightthickness=2,
+            highlightthickness=1,
             font=(self.font_family, 10),
         )
         self._workflow_register_editable(widget)
         return widget
+
+    @staticmethod
+    def _preserve_combobox_selection(_event) -> str:
+        """Keep wheel gestures from changing a closed field's selected parameter.
+
+        The dropdown's separate Listbox keeps its native wheel behavior.
+        """
+        return "break"
 
     def _combo(
         self,
@@ -579,6 +1010,8 @@ class PytsaApp(AdditionalControlsMixin, WorkflowMixin):
             style="TCombobox",
             font=(self.font_family, 10),
         )
+        for sequence in ("<MouseWheel>", "<Button-4>", "<Button-5>"):
+            widget.bind(sequence, self._preserve_combobox_selection, add="+")
         self._workflow_register_editable(widget)
         return widget
 
@@ -590,23 +1023,32 @@ class PytsaApp(AdditionalControlsMixin, WorkflowMixin):
         color: str = "green",
         track_busy: bool = True,
     ) -> tk.Button:
-        wrapper = tk.Frame(parent, bg=COLORS["ink"])
+        try:
+            parent_background = parent.cget("bg")
+        except tk.TclError:
+            parent_background = COLORS["white"]
+        primary = color == "green"
+        wrapper = tk.Frame(parent, bg=parent_background)
         button = tk.Button(
             wrapper,
             text=text,
             command=command,
             font=(self.font_family, 10, "bold"),
-            fg=COLORS["ink"],
+            fg=COLORS["white"] if primary else COLORS["ink"],
             bg=COLORS[color],
-            activebackground=COLORS[color],
-            activeforeground=COLORS["ink"],
-            relief="solid",
-            bd=2,
-            padx=12,
-            pady=6,
+            activebackground=COLORS["primary_hover"] if primary else COLORS["control_hover"],
+            activeforeground=COLORS["white"] if primary else COLORS["ink"],
+            disabledforeground=COLORS["muted"],
+            relief="flat",
+            bd=0,
+            highlightthickness=1,
+            highlightbackground=COLORS["line"],
+            highlightcolor=COLORS["green"],
+            padx=14,
+            pady=8,
             cursor="hand2",
         )
-        button.pack(fill="both", expand=True, padx=(0, 4), pady=(0, 4))
+        button.pack(fill="both", expand=True, padx=(0, 4))
         wrapper.pack_propagate(True)
         if track_busy:
             button.idle_state = tk.NORMAL
@@ -698,25 +1140,32 @@ class PytsaApp(AdditionalControlsMixin, WorkflowMixin):
         return text if len(text) < 180 else text[:177] + "…"
 
     def show_page(self, page_id: str) -> None:
+        if page_id not in self.pages:
+            raise KeyError(f"Unknown page: {page_id}")
         for key, page in self.pages.items():
             page.grid_remove()
             button = self.page_buttons.get(key)
             if button is not None:
                 active = key == page_id
                 button.configure(
-                    bg=COLORS["green"] if active else COLORS["white"],
-                    relief="raised" if active else "solid",
-                    bd=3 if active else 2,
+                    bg=COLORS["nav_active"] if active else COLORS["sidebar"],
+                    fg=COLORS["nav_active_text"] if active else COLORS["sidebar_text"],
+                    activebackground=COLORS["nav_active"] if active else COLORS["nav_hover"],
+                    activeforeground=COLORS["nav_active_text"] if active else COLORS["white"],
+                    relief="flat",
+                    bd=0,
+                    highlightbackground=COLORS["nav_active"] if active else COLORS["sidebar"],
                 )
         self.pages[page_id].grid()
         self.pages[page_id].canvas.yview_moveto(0)
+        self.pages[page_id]._wheel_remainder = 0.0
         self.current_page = page_id
 
     def _set_status(self, message: str, warning: bool = False) -> None:
         self.status_var.set(message)
         self.status_label.configure(
             fg=COLORS["warning"] if warning else COLORS["ink"],
-            bg=COLORS["coral"] if warning else COLORS["lemon"],
+            bg=COLORS["coral"] if warning else COLORS["surface_muted"],
         )
 
     def _build_input_page(self, parent: tk.Misc) -> None:
@@ -759,7 +1208,7 @@ class PytsaApp(AdditionalControlsMixin, WorkflowMixin):
 
         options = tk.Frame(source, bg=COLORS["white"])
         options.grid(row=1, column=0, columnspan=3, sticky="ew")
-        for column in range(5):
+        for column in range(3):
             options.grid_columnconfigure(column, weight=1)
         self.sheet_combo = self._combo(options, self.sheet_var, ["首个工作表"], width=18)
         self.encoding_combo = self._combo(
@@ -772,7 +1221,7 @@ class PytsaApp(AdditionalControlsMixin, WorkflowMixin):
         self._field(options, "文本编码", self.encoding_combo, 0, 1)
         self._field(options, "分隔符", self.separator_combo, 0, 2)
         reload_row = tk.Frame(options, bg=COLORS["white"])
-        reload_row.grid(row=0, column=3, columnspan=2, sticky="ew", padx=6, pady=(20, 2))
+        reload_row.grid(row=2, column=0, columnspan=3, sticky="ew", padx=6, pady=(4, 2))
         reload_btn = self._action_button(
             reload_row, "读取所选工作表 / 格式", self.reload_selected_source, "lavender"
         )
@@ -951,7 +1400,7 @@ class PytsaApp(AdditionalControlsMixin, WorkflowMixin):
             COLORS["white"],
         )
         matrix.grid_columnconfigure(1, weight=1)
-        matrix.grid_rowconfigure(1, weight=1)
+        matrix.grid_rowconfigure(2, weight=1)
         tk.Label(
             matrix,
             text="矩阵类型",
@@ -960,7 +1409,7 @@ class PytsaApp(AdditionalControlsMixin, WorkflowMixin):
             font=(self.font_family, 9, "bold"),
         ).grid(row=0, column=0, sticky="w", padx=6, pady=6)
         self.matrix_combo = self._combo(matrix, self.eda_matrix_var, [], width=34)
-        self.matrix_combo.grid(row=0, column=1, sticky="w", padx=6, pady=6)
+        self.matrix_combo.grid(row=0, column=1, sticky="ew", padx=6, pady=6)
         self.matrix_combo.bind("<<ComboboxSelected>>", self._on_matrix_selected)
         self.matrix_note = self._label(
             matrix,
@@ -968,9 +1417,15 @@ class PytsaApp(AdditionalControlsMixin, WorkflowMixin):
             color=COLORS["muted"],
             wraplength=900,
         )
-        self.matrix_note.grid(row=0, column=2, sticky="e", padx=6, pady=6)
+        self.matrix_note.grid(row=1, column=0, columnspan=2, sticky="ew", padx=6, pady=(0, 6))
+        self.matrix_note.bind(
+            "<Configure>",
+            lambda event, label=self.matrix_note: label.configure(
+                wraplength=max(280, event.width - 12)
+            ),
+        )
         table_host = tk.Frame(matrix, bg=COLORS["white"])
-        table_host.grid(row=1, column=0, columnspan=3, sticky="nsew")
+        table_host.grid(row=2, column=0, columnspan=2, sticky="nsew")
         self.matrix_tree = self._make_table(table_host, "matrix", height=13)
 
         charts = self._card(
@@ -1111,6 +1566,9 @@ class PytsaApp(AdditionalControlsMixin, WorkflowMixin):
         try:
             while True:
                 event = self.task_queue.get_nowait()
+                if event[0].startswith("settings_"):
+                    self._settings_process_async_event(event)
+                    continue
                 if event[0] == "progress":
                     _, task_id, _title, payload = event
                     self._workflow_on_task_progress(task_id, payload)
@@ -1440,6 +1898,7 @@ class PytsaApp(AdditionalControlsMixin, WorkflowMixin):
             "eda_peaks",
             "eda_events",
             "eda_event_summary",
+            "eda_quality_summary",
         ):
             self._set_table(key, None)
         if hasattr(self, "analysis_summary"):
@@ -1542,6 +2001,7 @@ class PytsaApp(AdditionalControlsMixin, WorkflowMixin):
             "band_high": self._parse_float(self.band_high_var, "频带上限", allow_blank=True),
             "nperseg": self._parse_int(self.nperseg_var, "Welch 分段长度", minimum=2),
         }
+        analysis_config.update(_runtime_settings.load_runtime_settings())
         if analysis_config["band_low"] < 0:
             raise ValueError("频带下限不能小于 0 Hz。")
         if analysis_config["band_high"] is not None and analysis_config["band_high"] <= analysis_config["band_low"]:
@@ -1886,6 +2346,17 @@ class PytsaApp(AdditionalControlsMixin, WorkflowMixin):
             "response_start": self._parse_float(self.response_start_var, "事件响应起点"),
             "response_end": self._parse_float(self.response_end_var, "事件响应终点"),
         }
+        config["min_us"] = self._parse_float(
+            self.eda_min_us_var, "皮电最小有效幅值（uS）", allow_blank=True
+        )
+        config["max_us"] = self._parse_float(
+            self.eda_max_us_var, "皮电最大有效幅值（uS）", allow_blank=True
+        )
+        config["max_slope_us_per_second"] = self._parse_float(
+            self.eda_max_slope_us_per_second_var,
+            "皮电最大变化速率（uS/s）",
+            allow_blank=True,
+        )
         return column, config
 
     def run_eda(self) -> None:
@@ -1966,8 +2437,9 @@ class PytsaApp(AdditionalControlsMixin, WorkflowMixin):
         self.eda_result = eda
         self.eda_meta = eda.get("meta", {})
         tables = eda.get("tables", {})
-        for key in ("eda_windows", "eda_peaks", "eda_events", "eda_event_summary"):
+        for key in ("eda_windows", "eda_peaks", "eda_events", "eda_event_summary", "eda_quality_summary"):
             self._set_table(key, tables.get(key))
+        self._set_table("eda_quality_summary", tables.get("eda_quality_summary"))
         warnings = list(eda.get("warnings", []))
         self.last_warnings = list(self.last_warnings) + warnings
         self._replace_text(self.eda_warnings, "\n".join(warnings) or "本次皮电分析没有额外提示。")
@@ -2614,6 +3086,13 @@ class PytsaApp(AdditionalControlsMixin, WorkflowMixin):
             return
         page_id, scroll_fraction, capture_name = self.capture_steps[index]
         self.show_page(page_id)
+        if page_id == "forecast":
+            tab = self.export_tab if capture_name == "forecast-export" else self.forecast_tab
+            self.forecast_notebook.select(tab)
+        elif capture_name == "eda-quality-summary":
+            self.eda_results_notebook.select(self.eda_quality_tab)
+        elif page_id == "settings":
+            self._set_status("就绪。配置与运行资源保存在本机用户目录。")
         self.root.update_idletasks()
         self.pages[page_id].canvas.yview_moveto(scroll_fraction)
         self.root.update_idletasks()
@@ -2888,25 +3367,45 @@ class PytsaApp(AdditionalControlsMixin, WorkflowMixin):
         settings.grid_columnconfigure(0, weight=1)
         settings.grid_columnconfigure(1, weight=1)
         self.eda_clean_combo = self._combo(
-            settings, self.eda_clean_var, ["neurokit", "none"], width=14
+            settings, self.eda_clean_display_var, list(EDA_CLEAN_OPTIONS.values()), width=28
         )
         self.eda_method_combo = self._combo(
-            settings, self.eda_method_var, ["highpass", "median"], width=14
+            settings, self.eda_method_display_var, list(EDA_METHOD_OPTIONS.values()), width=47
+        )
+        self.eda_clean_combo.bind(
+            "<<ComboboxSelected>>", lambda event: self._settings_eda_choice_changed("clean", event)
+        )
+        self.eda_method_combo.bind(
+            "<<ComboboxSelected>>", lambda event: self._settings_eda_choice_changed("method", event)
         )
         self.eda_cutoff_entry = self._entry(settings, self.eda_cutoff_var)
         self.eda_relative_entry = self._entry(settings, self.eda_relative_var)
         self.eda_absolute_entry = self._entry(settings, self.eda_absolute_var)
+        self.eda_min_us_entry = self._entry(settings, self.eda_min_us_var)
+        self.eda_max_us_entry = self._entry(settings, self.eda_max_us_var)
+        self.eda_max_slope_us_per_second_entry = self._entry(
+            settings, self.eda_max_slope_us_per_second_var
+        )
         self._field(settings, "清理方法", self.eda_clean_combo, 0, 0)
         self._field(settings, "tonic / phasic 分解", self.eda_method_combo, 0, 1)
         self._field(settings, "高通截止频率（Hz）", self.eda_cutoff_entry, 1, 0)
         self._field(settings, "相对峰显著度阈值（0–1）", self.eda_relative_entry, 1, 1)
         self._field(settings, "绝对峰幅值阈值（uS；a.u. 不适用）", self.eda_absolute_entry, 2, 0)
+        self._field(settings, "信号质量下限（uS；留空关闭）", self.eda_min_us_entry, 2, 1)
+        self._field(settings, "信号质量上限（uS；留空关闭）", self.eda_max_us_entry, 3, 0)
+        self._field(
+            settings,
+            "最大变化速率（uS/s；留空关闭）",
+            self.eda_max_slope_us_per_second_entry,
+            3,
+            1,
+        )
         self._label(
             settings,
-            "短于 20 秒的连续段标为无效；不会跨缺失段滤波。uS/mS/nS 统一换算到 uS 后检测，a.u. 保持任意单位且禁用绝对 uS 阈值。",
+            "短于 20 秒的连续段标为无效；不会跨缺失段滤波。uS/mS/nS 统一换算到 uS 后检测，a.u. 保持任意单位且禁用绝对 uS 阈值。cvxEDA 需 cvxopt；SparseEDA 为上游实验性方法，可能报错。",
             color=COLORS["muted"],
             wraplength=940,
-        ).grid(row=6, column=0, columnspan=2, sticky="w", padx=6, pady=5)
+        ).grid(row=8, column=0, columnspan=2, sticky="w", padx=6, pady=5)
 
         windows = self._card(
             parent,
@@ -2995,14 +3494,18 @@ class PytsaApp(AdditionalControlsMixin, WorkflowMixin):
         self._build_eda_range_controls(output)
         tabs = ttk.Notebook(output)
         tabs.pack(fill="both", expand=True, padx=4, pady=4)
+        self.eda_results_notebook = tabs
         for key, title in (
             ("eda_windows", "固定窗口"),
             ("eda_peaks", "SCR 峰"),
             ("eda_events", "逐事件"),
             ("eda_event_summary", "按标签汇总"),
+            ("eda_quality_summary", "信号质量"),
         ):
             tab = tk.Frame(tabs, bg=COLORS["white"])
             tabs.add(tab, text=title)
+            if key == "eda_quality_summary":
+                self.eda_quality_tab = tab
             self._make_table(tab, key, height=8)
         self.eda_warnings = tk.Text(
             output,
@@ -3127,6 +3630,7 @@ def run_smoke_test(output_path: Path | None = None) -> int:
         "eda_windows",
         "eda_events",
         "eda_event_summary",
+        "eda_quality_summary",
     }
     missing_eda = sorted(required_eda_tables - set(eda_result.get("tables", {})))
     if missing_eda:
@@ -3211,6 +3715,8 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog=APP_NAME)
     parser.add_argument("--smoke-test", action="store_true", help=argparse.SUPPRESS)
     parser.add_argument("--smoke-output", type=Path, default=None, help=argparse.SUPPRESS)
+    parser.add_argument("--environment-check", action="store_true", help=argparse.SUPPRESS)
+    parser.add_argument("--environment-output", type=Path, default=None, help=argparse.SUPPRESS)
     parser.add_argument(
         "--ui-capture",
         nargs="?",
@@ -3226,6 +3732,37 @@ def main(argv: list[str] | None = None) -> int:
         help=argparse.SUPPRESS,
     )
     args = parser.parse_args(argv)
+    if args.environment_check:
+        try:
+            environment = _runtime_settings.detect_environment()
+            environment["frozen"] = bool(getattr(sys, "frozen", False))
+            environment["external_site_packages"] = str(
+                _runtime_settings.runtime_environment_site_packages()
+            ) if getattr(sys, "frozen", False) else None
+            rendered = json.dumps(environment, ensure_ascii=False, indent=2)
+            if args.environment_output is None:
+                print(rendered)
+            else:
+                args.environment_output.parent.mkdir(parents=True, exist_ok=True)
+                args.environment_output.write_text(rendered + "\n", encoding="utf-8")
+            return 0
+        except BaseException as exc:
+            failure = {
+                "overall": "FAIL",
+                "error": f"{type(exc).__name__}: {exc}",
+                "traceback": traceback.format_exc(),
+            }
+            if args.environment_output is not None:
+                try:
+                    args.environment_output.parent.mkdir(parents=True, exist_ok=True)
+                    args.environment_output.write_text(
+                        json.dumps(failure, ensure_ascii=False, indent=2) + "\n",
+                        encoding="utf-8",
+                    )
+                except Exception:
+                    pass
+            print(f"Environment check failed: {type(exc).__name__}: {exc}", file=sys.stderr)
+            return 1
     if args.smoke_test:
         try:
             return run_smoke_test(args.smoke_output)
@@ -3256,9 +3793,39 @@ def main(argv: list[str] | None = None) -> int:
             else Path(tempfile.gettempdir()) / "pytsa-ui-capture"
         )
     set_windows_identity_and_dpi()
-    root = tk.Tk()
-    PytsaApp(root, capture_dir=capture_dir, capture_eda_only=capture_eda_only)
-    root.mainloop()
+    root: tk.Tk | None = None
+    splash: tk.Frame | None = None
+    try:
+        root = tk.Tk()
+        splash = _show_startup_splash(root)
+        _close_pyinstaller_splash()
+        PytsaApp(root, capture_dir=capture_dir, capture_eda_only=capture_eda_only)
+        splash.destroy()
+        splash = None
+        root.update_idletasks()
+        root.update()
+    except Exception as exc:
+        _close_pyinstaller_splash()
+        if splash is not None:
+            try:
+                splash.destroy()
+            except tk.TclError:
+                pass
+        _show_startup_error(root, exc)
+        if root is not None:
+            try:
+                root.destroy()
+            except tk.TclError:
+                pass
+        return 1
+
+    try:
+        root.mainloop()
+    finally:
+        try:
+            root.destroy()
+        except tk.TclError:
+            pass
     return 0
 
 

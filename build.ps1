@@ -1,5 +1,5 @@
 param(
-    [string]$DeliveryDir = "C:\Users\DELL\Desktop\APP"
+    [string]$DeliveryDir = ".\deliver\PYTSA-1.3.1"
 )
 
 $ErrorActionPreference = "Stop"
@@ -11,8 +11,10 @@ $workPath = Join-Path $projectRoot "build\work"
 $specPath = Join-Path $projectRoot "build\spec"
 $sourceExe = Join-Path $distPath "PYTSA.exe"
 $iconPath = Join-Path $projectRoot "assets\PYTSA.ico"
+$startupImage = Join-Path $projectRoot "assets\PYTSA-splash.png"
 $researchFile = Join-Path $projectRoot "research_notes.json"
 $assetDir = Join-Path $projectRoot "assets"
+$docsDir = Join-Path $projectRoot "docs"
 if ([string]::IsNullOrWhiteSpace($DeliveryDir)) {
     throw "DeliveryDir must be a non-empty path."
 }
@@ -42,14 +44,25 @@ try {
         "--specpath", $specPath,
         "--add-data", "$researchFile;.",
         "--add-data", "$assetDir;assets",
+        "--add-data", "$docsDir;docs",
         "--hidden-import", "core",
         "--hidden-import", "experimental",
+        "--hidden-import", "runtime_settings",
+        "--hidden-import", "settings_ui",
         "--hidden-import", "report_export",
         "--hidden-import", "PIL.ImageGrab",
+        "--exclude-module", "cupy",
+        "--exclude-module", "cupyx",
+        "--exclude-module", "nvidia",
+        "--exclude-module", "cuda",
+        "--exclude-module", "cvxopt",
         "--collect-all", "neurokit2",
-        "--collect-all", "statsmodels",
-        "app.py"
+        "--collect-all", "statsmodels"
     )
+    if (Test-Path -LiteralPath $startupImage -PathType Leaf) {
+        $pyinstallerArgs += @("--splash", $startupImage)
+    }
+    $pyinstallerArgs += "app.py"
 
     & $pythonExe @pyinstallerArgs
     if ($LASTEXITCODE -ne 0) {

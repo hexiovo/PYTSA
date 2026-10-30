@@ -16,6 +16,17 @@ htmlcov/
 *.spec
 /assets/build-assets-evidence.json
 
+# Local runtime and temporary files
+/Data/
+/tmp/
+/temp/
+/logs/
+*.tmp
+*.temp
+
+# Generated example results; keep the skill source, expected values, and test fixtures
+/skills/pytsa-study-config/examples/synthetic_only/output/
+
 # Local configuration and saved analysis projects
 .env
 .env.*

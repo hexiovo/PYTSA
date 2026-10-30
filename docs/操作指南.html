@@ -1,0 +1,164 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>PYTSA 操作指南</title>
+  <style>
+    :root { color-scheme: light; --ink:#243447; --muted:#607086; --green:#0f766e; --canvas:#f3f6fa; --line:#d6dee8; --white:#fff; }
+    * { box-sizing:border-box; }
+    body { margin:0; background:var(--canvas); color:var(--ink); font:16px/1.75 "Microsoft YaHei UI","Microsoft YaHei",sans-serif; }
+    .layout { max-width:1240px; margin:0 auto; padding:28px; display:grid; grid-template-columns:230px minmax(0,1fr); gap:24px; }
+    nav { position:sticky; top:20px; align-self:start; padding:18px; border:1px solid var(--line); border-radius:14px; background:var(--white); }
+    nav strong { display:block; margin:0 0 10px; font-size:18px; }
+    nav a { display:block; padding:5px 0; color:var(--green); text-decoration:none; }
+    nav a:hover, nav a:focus { text-decoration:underline; }
+    main { min-width:0; padding:34px clamp(20px,5vw,60px); background:var(--white); border:1px solid var(--line); border-radius:16px; }
+    h1 { margin:0 0 6px; font-size:32px; line-height:1.3; }
+    h2 { margin:42px 0 10px; padding-top:8px; border-top:2px solid #e8f5f2; font-size:23px; }
+    h3 { margin:24px 0 8px; font-size:18px; }
+    p, li { max-width:78ch; }
+    a { color:#0b625b; }
+    .version { color:var(--muted); margin:0 0 22px; }
+    .notice { padding:14px 18px; border-left:4px solid var(--green); border-radius:6px; background:#e8f5f2; }
+    .steps { padding-left:24px; }
+    .screens { display:grid; grid-template-columns:repeat(auto-fit,minmax(300px,1fr)); gap:16px; margin:18px 0 28px; }
+    figure { margin:0; padding:10px; border:1px solid var(--line); border-radius:10px; background:#f8fafc; }
+    figure img { display:block; width:100%; height:auto; border-radius:5px; }
+    figcaption { padding:8px 4px 0; color:var(--muted); font-size:14px; }
+    code { padding:2px 5px; border-radius:4px; background:#eef3f8; font:0.93em Consolas,monospace; }
+    footer { margin-top:40px; padding-top:14px; border-top:1px solid var(--line); color:var(--muted); font-size:14px; }
+    @media (max-width:820px) { .layout { display:block; padding:12px; } nav { position:static; margin-bottom:12px; } main { padding:24px 18px; } }
+    @media print { body { background:#fff; } .layout { display:block; max-width:none; padding:0; } nav { display:none; } main { border:0; padding:0; } figure { break-inside:avoid; } a { color:inherit; } }
+  </style>
+</head>
+<body>
+  <div class="layout">
+    <nav aria-label="操作指南目录">
+      <strong>PYTSA 操作指南</strong>
+      <a href="#quick">快速演示</a>
+      <a href="#input">导入数据与时间</a>
+      <a href="#prepare">预处理与分析</a>
+      <a href="#matrices">指标矩阵</a>
+      <a href="#forecast">预测与报告导出</a>
+      <a href="#eda">实验与皮电</a>
+      <a href="#settings">配置与环境</a>
+      <a href="#workspace">工作台与历史</a>
+      <a href="#faq">常见问题</a>
+    </nav>
+    <main>
+      <header>
+        <h1>PYTSA 操作指南</h1>
+        <p class="version">适用于 PYTSA 1.3.1 · 中文界面截图取自桌面程序</p>
+        <p class="notice">PYTSA 在本机读取表格并运行分析，原始输入文件保持只读。每个文件按一个被试或条件的一段连续记录处理；程序不会拼接多个被试，也不会连接采集设备。</p>
+      </header>
+
+      <section id="quick">
+        <h2>快速演示</h2>
+        <ol class="steps">
+          <li>启动程序后，加载画面完成初始化会进入欢迎首页。</li>
+          <li>点击 <b>加载通用合成示例</b>。程序会载入标记为 <code>SYNTHETIC_ONLY</code> 的数据并打开数据预览。</li>
+          <li>进入 <b>02 预处理与分析</b>，保留默认设置并点击 <b>准备数据并分析</b>。</li>
+          <li>查看 <b>03 指标矩阵与图表</b> 和 <b>04 预测、导出与方法</b>。练习皮电时，在 <b>05 实验 / 皮电</b> 使用皮电合成演示。</li>
+          <li>点击左侧 <b>欢迎首页</b> 可随时返回。</li>
+        </ol>
+        <div class="screens">
+          <figure><a href="screenshots/home.png"><img src="screenshots/home.png" alt="PYTSA 欢迎首页截图"></a><figcaption>欢迎首页：进入数据输入、合成示例、工作台和本地截图指南。</figcaption></figure>
+          <figure><a href="screenshots/input.png"><img src="screenshots/input.png" alt="数据输入页面截图"></a><figcaption>数据输入：选择文件，查看表格预览并指定时间与分析变量。</figcaption></figure>
+        </div>
+        <p>通用时间序列示例与皮电示例是两组不同的程序合成数据，不是真实被试、实验或传感器记录，不能用于实证结论。导入新文件会替换当前记录和派生结果。</p>
+      </section>
+
+      <section id="input">
+        <h2>导入真实数据、设置时间与采样率</h2>
+        <p>在 <b>01 数据输入</b> 点击 <b>选择文件</b>，选择 CSV、TSV、TXT 或 XLSX。文本读取失败时检查“文本编码”和“分隔符”；Excel 可选择工作表，再点击 <b>读取所选工作表 / 格式</b>。也可以读取剪贴板中的表格文本。</p>
+        <p>载入后选择时间列和一个或多个数值信号列。没有时间列时，程序会按采样率生成等间隔时间轴。填写真实的 <b>采样率 fs（Hz）</b>；不确定时先查设备或文件说明，不要用记录行数代替采样率。</p>
+        <p>数值时间可选秒 <code>s</code>、毫秒 <code>ms</code> 或微秒 <code>us</code>；日期时间可在“时间单位与时区”检查时区。无时区日期按指定时区解释，有时区值转换到 UTC。遇到重复或不存在的夏令时本地时刻，应使用带偏移的时间明确表示。请核对预览列名、首尾时间和单位。</p>
+        <div class="screens">
+          <figure><a href="screenshots/input.png"><img src="screenshots/input.png" alt="数据输入页面"></a><figcaption>文件来源、表格预览和变量选择。</figcaption></figure>
+          <figure><a href="screenshots/input-time-options.png"><img src="screenshots/input-time-options.png" alt="时间列、时间单位与采样率设置"></a><figcaption>时间列、时间单位、时区和采样率应与原始记录一致。</figcaption></figure>
+        </div>
+      </section>
+
+      <section id="prepare">
+        <h2>预处理与分析</h2>
+        <ul>
+          <li><b>缺失值处理：</b>默认拒绝。前向填充和线性插值只用于探索性分析；可设置缺失时长和连续缺失点数上限。</li>
+          <li><b>重复时间处理：</b>可报错、取均值或保留首条，按数据含义选择。</li>
+          <li><b>重采样间隔：</b>仅在目标间隔已明确、需要整理为等间隔时间轴时填写，单位为秒。</li>
+          <li><b>探索性变换与滤波：</b>可选去趋势、Hampel 去尖峰、中值或 Savitzky–Golay 平滑、陷波、小波软阈值和 Butterworth 滤波，默认关闭；这些操作改变探索分支，预测仍使用保留的原始尺度分支。</li>
+          <li><b>指标参数：</b>ACF/PACF 滞后、周期、Welch 分段长度和频带范围要与采样率、记录长度相容。</li>
+        </ul>
+        <p>点击 <b>准备数据并分析</b>。结果含描述统计、平稳性和残差检验、异常值标记及结构图。异常值只被标记，不会自动删除。遇到错误时先阅读弹出的原因和页面状态。</p>
+        <div class="screens"><figure><a href="screenshots/prepare.png"><img src="screenshots/prepare.png" alt="预处理与分析页面"></a><figcaption>预处理规则与分析设置。</figcaption></figure></div>
+      </section>
+
+      <section id="matrices">
+        <h2>指标矩阵与图表</h2>
+        <p>完成分析后进入 <b>03 指标矩阵与图表</b>，选择 Pearson、Spearman、Kendall τ、协方差、偏相关、指定滞后相关、频带平均平方相干或标准化欧式距离。Kendall 矩阵描述秩相关，不计算显著性 p 值。图表标签可切换时域、ACF/PACF、Welch PSD 与 STL 分解。</p>
+        <p>矩阵描述当前变量的统计关系；滞后相关方向按界面说明读取，相关、偏相关和相干本身都不代表因果。样本不足、常数序列或空频带可能显示 NA 或提示。</p>
+        <div class="screens"><figure><a href="screenshots/matrices.png"><img src="screenshots/matrices.png" alt="指标矩阵与图表页面"></a><figcaption>切换矩阵类型和时间结构图。</figcaption></figure></div>
+      </section>
+
+      <section id="forecast">
+        <h2>预测与导出报告</h2>
+        <p>在 <b>04 预测、导出与方法</b> 的“预测”标签选择预测变量、未来长度、留后比例和模型。可以先用简单模型建立基线，再按记录长度选择 ETS、ARIMA 或 SARIMA；季节周期按样本点填写。留后表现只代表当前记录中的时间留后段，不等同于独立外部验证。</p>
+        <p>预测完成后切换到“结果导出”：选择结果文件夹、报告模板和标题，填写实验信息，勾选报告章节与格式，按需选择图表，再点 <b>导出全部结果</b>。等状态栏提示完成后，打开生成的时间戳目录。</p>
+        <p>输出格式可选 CSV、XLSX、JSON、PNG 和离线 HTML。HTML 图表嵌入报告；选择 CSV/XLSX 时才会额外输出相应数据表。报告模板可保存并复用。</p>
+        <div class="screens">
+          <figure><a href="screenshots/forecast.png"><img src="screenshots/forecast.png" alt="预测页面"></a><figcaption>预测变量、模型和验证设置。</figcaption></figure>
+          <figure><a href="screenshots/forecast-export.png"><img src="screenshots/forecast-export.png" alt="报告导出页面"></a><figcaption>选择输出位置、章节、模板与格式。</figcaption></figure>
+        </div>
+      </section>
+
+      <section id="eda">
+        <h2>实验与皮电</h2>
+        <p>进入 <b>05 实验 / 皮电</b>，可以使用当前已载入记录，也可点击 <b>载入皮电合成演示（单位已知：uS）</b> 熟悉设置。选择皮电数值列和单位，并确认采样率；要求至少 2 Hz、等间隔，且至少有一段连续有效数据达到 20 秒。</p>
+        <p>按研究设计选择清理与分解方法、检测阈值、固定窗口长度和统计区间。事件表为可选项，时间以记录起点开始的秒数表示；也可以从原始连续标签列提取事件。运行后检查原始、清理、tonic/phasic 曲线和结果表。皮电分析不直接推断压力、情绪或疾病。</p>
+        <div class="screens"><figure><a href="screenshots/eda.png"><img src="screenshots/eda.png" alt="实验与皮电分析页面"></a><figcaption>皮电通道、单位、清理和窗口设置。</figcaption></figure></div>
+      </section>
+
+      <section id="settings">
+        <h2>配置与环境</h2>
+        <p>在 <b>07 配置与环境</b> 导入或导出完整参数、设置运行后端和 CPU 并行数，并检测可选依赖。配置包含预处理、分析、预测、皮电、事件映射和运行资源设置，不包含数据文件；导入后核对列名、采样率、单位和事件时间。</p>
+        <ul>
+          <li><code>cpu</code> 使用 CPU；<code>auto</code> 在 GPU 可用时尝试使用，否则记录原因并回到 CPU；<code>gpu</code> 要求功能检测通过。GPU 当前只加速 Pearson、协方差和标准化距离矩阵。</li>
+          <li>“检测环境”会尝试导入依赖并运行 CuPy 运算。安装 Python 包不会安装 NVIDIA 硬件或驱动。GPU 需要兼容的显卡、驱动和 CuPy 版本。</li>
+          <li>“一键安装缺少包”需要网络。便携 EXE 的可选组件使用独立环境，安装后需重启并重新检测。cvxEDA 需要可选依赖 <code>cvxopt</code>；BioSPPy 清理要求采样率高于 10 Hz。</li>
+          <li>SparseEDA 是实验性方法，可能失败。NeuroKit 的 cvxEDA 接口不公开求解器收敛状态，有限输出不能单独证明优化已收敛。</li>
+        </ul>
+        <p>CPU 是默认计算路径。GPU 加速目前仅用于 Pearson、协方差和标准化距离矩阵；其它检验、预测和皮电求解仍使用 CPU。并行线程数为 1–32，实际速度取决于数据大小和计算类型。</p>
+      </section>
+
+      <section id="workspace">
+        <h2>工作台、项目、模板、批次与历史</h2>
+        <ul>
+          <li><b>项目：</b>首次用“另存为…”创建 <code>.pytsa.json</code> 文件，之后保存当前项目。项目嵌入当前表格、参数和可用结果；打开项目不会自动重读原始路径。源文件移动后，重新选择新路径、载入、分析并保存。</li>
+          <li><b>参数模板：</b>保存预处理、分析、预测、皮电和事件设置。应用模板只更新界面，不会自动运行；列名不匹配时按提示映射。</li>
+          <li><b>批量处理：</b>添加一个或多个文件，明确选择事件文件策略；程序不会按文件名自动配对事件表。按需选择输出目录，完成项和失败项分开记录。</li>
+          <li><b>历史比较：</b>成功运行后会保存快照。可比较两次运行的参数、指标与兼容曲线；只有定义和单位相容时才计算差值或叠加。</li>
+          <li><b>其他标签：</b>最近使用、日志、区间与标注用于查找本机记录和排查任务。人工标注只记录区间，不自动改变样本。</li>
+        </ul>
+        <div class="screens"><figure><a href="screenshots/workflow.png"><img src="screenshots/workflow.png" alt="工作台页面"></a><figcaption>项目、模板、预检、批次、历史和日志标签。</figcaption></figure></div>
+      </section>
+
+      <section id="faq">
+        <h2>常见问题</h2>
+        <h3>启动后看不到主窗口？</h3>
+        <p>程序先显示加载画面，初始化后进入欢迎首页。若窗口初始化失败，会显示异常类型和实际错误内容。记录完整错误文本，再检查运行环境或资源文件。</p>
+        <h3>时间或频谱结果看起来不合理？</h3>
+        <p>核对时间列、数值时间单位、时区和 <code>fs</code>。填写采样率不能修正不规则采样；频率分析依赖正确的采样信息。</p>
+        <h3>为什么预测、矩阵或导出提示先完成分析？</h3>
+        <p>这些功能需要载入当前数据并完成预处理与分析。皮电还要求选择有效通道、单位和采样设置。</p>
+        <h3>项目提示源文件 changed 或 missing？</h3>
+        <p>项目中嵌入的表格和保存结果仍可恢复。要改用新路径时重新选择文件；程序不会自动寻找或替换源文件。</p>
+        <h3>HTML 里没有表格下载链接？</h3>
+        <p>表格下载链接依赖导出时选择 CSV 或 XLSX。只选 HTML 时图表会嵌入报告，但不会额外生成完整表格文件。</p>
+        <h3>本机模板和历史保存在哪里？</h3>
+        <p>Windows 默认工作区是 <code>%LOCALAPPDATA%\PYTSA</code>；设置 <code>PYTSA_HOME</code> 可指定独立位置。模板、历史、日志和批次记录都保存在本机。</p>
+      </section>
+      <footer>PYTSA 1.3.1 · 离线桌面分析工具 · 页面和截图无需网络即可打开。</footer>
+    </main>
+  </div>
+</body>
+</html>

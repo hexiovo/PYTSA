@@ -1,0 +1,22 @@
+{
+  "status": "SYNTHETIC_ONLY",
+  "time_conversion": {
+    "input_value": 20000,
+    "input_unit": "ms",
+    "expected_value": 20,
+    "expected_unit": "s"
+  },
+  "paired_statistics": {
+    "subject_ids": ["001", "002", "003", "004", "005"],
+    "number_of_independent_pairs": 5,
+    "condition_rows": 10,
+    "differences": [1, 2, 3, 4, 5],
+    "mean_difference": 3,
+    "sample_sd_difference": 1.5811388300841898,
+    "standard_error": 0.7071067811865476,
+    "t": 4.242640687119285,
+    "df": 4,
+    "cohens_dz": 1.8973665961010275
+  },
+  "warning": "Do not interpret the generated signal or test result as evidence about a real experiment."
+}

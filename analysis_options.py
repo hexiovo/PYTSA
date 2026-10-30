@@ -1,9 +1,11 @@
 """Shared, validated numerical options for the offline analysis pipelines."""
 from __future__ import annotations
 
+import math
+
 import numpy as np
 import pandas as pd
-from scipy import signal
+from scipy import ndimage, signal
 
 
 def numeric_seconds(values, unit="s"):
@@ -77,6 +79,207 @@ def filter_values(values, fs, config):
                 else signal.sosfilt(sos, values, axis=0))
     except ValueError as exc:
         raise ValueError(f"滤波失败；零相位滤波需要足够长的记录：{exc}") from exc
+
+
+def apply_signal_preprocessing(values, fs, config):
+    """Apply opt-in exploratory preprocessing without changing physical inputs.
+
+    The operation order is detrending, Hampel despiking, smoothing, notch,
+    then optional wavelet denoising. ``values`` must be finite because gap
+    handling belongs to the caller and must be explicit.
+    """
+    array = np.asarray(values, dtype=float)
+    if array.ndim == 1:
+        array = array[:, None]
+        was_1d = True
+    elif array.ndim == 2:
+        was_1d = False
+    else:
+        raise ValueError("预处理输入必须是一维或二维数值数组。")
+    if not len(array) or not np.isfinite(array).all():
+        raise ValueError("预处理要求非空且没有缺失值的信号；请先显式处理缺失值。")
+    fs = float(fs)
+    if not np.isfinite(fs) or fs <= 0:
+        raise ValueError("采样率 fs 必须为有限正数。")
+    cfg = dict(config or {})
+    out = array.copy()
+    steps = []
+    details = {}
+
+    detrend = cfg.get("preprocess_detrend", "none")
+    if detrend not in {"none", "constant", "linear"}:
+        raise ValueError("预处理去趋势须为 none、constant 或 linear。")
+    if detrend != "none":
+        out = signal.detrend(out, axis=0, type=detrend)
+        steps.append(f"detrend:{detrend}")
+
+    hampel_enabled = cfg.get("hampel_enabled", False)
+    if isinstance(hampel_enabled, str):
+        if hampel_enabled not in {"on", "off"}:
+            raise ValueError("Hampel 去尖峰选项须为 on 或 off。")
+        hampel_enabled = hampel_enabled == "on"
+    replacement_counts = [0] * out.shape[1]
+    if hampel_enabled:
+        window = cfg.get("hampel_window", 7)
+        sigma = float(cfg.get("hampel_sigma", 3.0))
+        if int(window) != window or int(window) < 3 or int(window) % 2 == 0 or int(window) > len(out):
+            raise ValueError("Hampel 窗口必须为不超过记录长度的奇数，且至少为 3。")
+        if not np.isfinite(sigma) or sigma <= 0:
+            raise ValueError("Hampel 阈值倍数必须为有限正数。")
+        window = int(window)
+        for column in range(out.shape[1]):
+            values_1d = out[:, column]
+            local_median = ndimage.vectorized_filter(
+                values_1d, np.median, size=window, axes=(0,), mode="nearest",
+                batch_memory=64 * 1024 * 1024)
+
+            def window_mad(samples, *, axis):
+                median = np.median(samples, axis=axis, keepdims=True)
+                return np.median(np.abs(samples - median), axis=axis)
+
+            local_mad = ndimage.vectorized_filter(
+                values_1d, window_mad, size=window, axes=(0,), mode="nearest",
+                batch_memory=64 * 1024 * 1024)
+            threshold = sigma * 1.4826 * local_mad
+            outliers = (np.abs(values_1d - local_median) > threshold) & (local_mad > 0)
+            # A zero local MAD is common in quantized/flat regions; deviations
+            # from that local constant are still clear spikes.
+            outliers |= (local_mad == 0) & (values_1d != local_median)
+            replacement_counts[column] = int(np.count_nonzero(outliers))
+            out[outliers, column] = local_median[outliers]
+        steps.append("hampel")
+        details["hampel"] = {"window_samples": window, "threshold_mad": sigma,
+                             "replaced_by_channel": replacement_counts,
+                             "replaced_total": int(sum(replacement_counts))}
+        if sum(replacement_counts):
+            details.setdefault("warnings", []).append(
+                f"Hampel replaced {sum(replacement_counts)} local outliers with the local window median.")
+
+    smoothing = cfg.get("smoothing", "none")
+    if smoothing not in {"none", "median", "savgol"}:
+        raise ValueError("平滑方法须为 none、median 或 savgol。")
+    if smoothing != "none":
+        window = cfg.get("smoothing_window", 5)
+        if int(window) != window or int(window) < 3 or int(window) % 2 == 0 or int(window) > len(out):
+            raise ValueError("平滑窗口必须为不超过记录长度的奇数，且至少为 3。")
+        window = int(window)
+        if smoothing == "median":
+            out = ndimage.median_filter(out, size=(window, 1), mode="nearest")
+        else:
+            order = cfg.get("savgol_polyorder", 2)
+            if int(order) != order or int(order) < 0 or int(order) >= window:
+                raise ValueError("Savgol 多项式阶数须为非负整数且小于窗口长度。")
+            out = signal.savgol_filter(out, window_length=window, polyorder=int(order), axis=0,
+                                       mode="interp")
+            details["savgol_polyorder"] = int(order)
+        steps.append(f"smoothing:{smoothing}")
+        details["smoothing"] = {"window_samples": window}
+
+    notch_frequency = cfg.get("notch_frequency")
+    if notch_frequency not in (None, ""):
+        frequency = float(notch_frequency)
+        quality = float(cfg.get("notch_q", 30.0))
+        if not np.isfinite(frequency) or not 0 < frequency < fs / 2:
+            raise ValueError("陷波频率须大于 0 且小于 Nyquist 频率 fs/2。")
+        if not np.isfinite(quality) or quality <= 0:
+            raise ValueError("陷波品质因数 Q 必须为有限正数。")
+        b, a = signal.iirnotch(frequency, quality, fs=fs)
+        try:
+            out = signal.filtfilt(b, a, out, axis=0)
+        except ValueError as exc:
+            raise ValueError(f"陷波滤波失败；记录长度不足：{exc}") from exc
+        steps.append("notch")
+        details["notch"] = {"frequency_hz": frequency, "q": quality}
+
+    wavelet_enabled = cfg.get("wavelet_enabled", False)
+    if isinstance(wavelet_enabled, str):
+        if wavelet_enabled not in {"on", "off"}:
+            raise ValueError("小波阈值去噪选项须为 on 或 off。")
+        wavelet_enabled = wavelet_enabled == "on"
+    if wavelet_enabled:
+        try:
+            import pywt
+        except ImportError as exc:
+            raise ImportError("启用小波去噪需要 PyWavelets；请安装 PyWavelets。") from exc
+        wavelet_name = str(cfg.get("wavelet_name", "db4"))
+        if wavelet_name not in pywt.wavelist(kind="discrete"):
+            raise ValueError(f"未知离散小波：{wavelet_name!r}。")
+        thresholds = []
+        denoised = np.empty_like(out)
+        for column in range(out.shape[1]):
+            coeffs = pywt.wavedec(out[:, column], wavelet_name, mode="symmetric")
+            finest = np.asarray(coeffs[-1], dtype=float)
+            sigma = float(np.median(np.abs(finest - np.median(finest))) / 0.6744897501960817)
+            threshold = sigma * math.sqrt(2.0 * math.log(max(len(out), 2)))
+            shrunk = ([coeffs[0]] + [pywt.threshold(c, threshold, mode="soft") for c in coeffs[1:]]
+                      if threshold > 0 else coeffs)
+            denoised[:, column] = pywt.waverec(shrunk, wavelet_name, mode="symmetric")[:len(out)]
+            thresholds.append(float(threshold))
+        out = denoised
+        steps.append("wavelet:soft")
+        details["wavelet"] = {"name": wavelet_name, "threshold_by_channel": thresholds,
+                              "threshold_rule": "universal soft threshold from finest-detail MAD"}
+
+    info = {"steps": steps, "details": details,
+            "rule": "Applied only to the exploratory prepared data branch; original physical measurements remain unchanged."}
+    result = out[:, 0] if was_1d else out
+    return result, info
+
+
+def time_domain_metrics(values, fs):
+    """Return compact time-domain descriptors with explicit degenerate rules."""
+    x = np.asarray(values, dtype=float).reshape(-1)
+    fs = float(fs)
+    if not np.isfinite(fs) or fs <= 0:
+        raise ValueError("采样率 fs 必须为有限正数。")
+    if not np.isfinite(x).all():
+        raise ValueError("时域特征要求有限信号值。")
+    n = len(x)
+    activity = float(np.var(x, ddof=1)) if n >= 2 else np.nan
+    mobility = complexity = np.nan
+    if n >= 3:
+        var_x = float(np.var(x, ddof=1))
+        first = np.diff(x) * fs
+        var_first = float(np.var(first, ddof=1))
+        if var_x > 0:
+            mobility = math.sqrt(var_first / var_x)
+            if n >= 4 and var_first > 0:
+                second = np.diff(first) * fs
+                var_second = float(np.var(second, ddof=1))
+                complexity = math.sqrt(var_second / var_first) / mobility if mobility > 0 else np.nan
+
+    line_length = float(np.sum(np.abs(np.diff(x)))) if n >= 2 else np.nan
+    zero_crossing_rate = np.nan
+    if n >= 2:
+        centered = x - np.mean(x)
+        signs = np.sign(centered)
+        nonzero_signs = signs[signs != 0]
+        crossings = int(np.count_nonzero(nonzero_signs[1:] != nonzero_signs[:-1]))
+        zero_crossing_rate = float(crossings / ((n - 1) / fs))
+    return {"hjorth_activity": activity, "hjorth_mobility": mobility,
+            "hjorth_complexity": complexity, "line_length": line_length,
+            "zero_crossing_rate": zero_crossing_rate}
+
+
+def permutation_entropy(values, order=3, delay=1):
+    """Normalized Bandt-Pompe entropy in [0, 1], with stable tie ordering."""
+    x = np.asarray(values, dtype=float).reshape(-1)
+    if int(order) != order or order < 2 or int(delay) != delay or delay < 1:
+        raise ValueError("排列熵 order 须至少为 2，delay 须为正整数。")
+    order, delay = int(order), int(delay)
+    if not np.isfinite(x).all():
+        raise ValueError("排列熵要求有限信号值。")
+    span = (order - 1) * delay + 1
+    if len(x) < span:
+        return float("nan")
+    count = len(x) - span + 1
+    patterns = np.column_stack([x[index * delay:index * delay + count] for index in range(order)])
+    # Stable sorting makes equal-valued samples retain their temporal order.
+    ordinal = np.argsort(patterns, axis=1, kind="stable")
+    _, counts = np.unique(ordinal, axis=0, return_counts=True)
+    probabilities = counts / counts.sum()
+    entropy = -float(np.sum(probabilities * np.log(probabilities)))
+    return float(entropy / math.log(math.factorial(order)))
 
 
 def welch_options(config, n):

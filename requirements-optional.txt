@@ -1,0 +1,5 @@
+# Optional scientific solver. Install only when using cvxEDA.
+cvxopt==1.3.3
+# NVIDIA GPU support is selected in the environment page according to driver
+# capability: cupy-cuda12x[ctk] or cupy-cuda13x[ctk]. Never install both.
+# CuPy and CUDA libraries are deliberately excluded from the base EXE.
